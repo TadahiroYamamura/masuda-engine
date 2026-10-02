@@ -76,8 +76,13 @@ nodes:
 - `approval.target`は`plan`、`diff`、または任意のデータ名。承認はその内容のハッシュに結びつく
 - `foreach.over`は`steps`（承認済み計画のステップ）、`findings`（自動修正対象の指摘）、`perspectives`（全観点）、`perspectives(from=<node>)`（そのノードが`selected-perspectives`に選んだ観点）、または`<データ名>[]`（JSON配列のデータ）。各項目は`step`・`finding`・`perspective`・またはデータ名の単数形で`body`の入力になる
 - `with`は呼び出し先の入力名にデータ名を結びつける。書かなければ同名のデータを渡す
-- `question.questions`は固定の質問。`role`を書くとエージェントが質問を`ask_human`で出す。答えは`outputs`の1つめのデータ名で保存される（JSON、id→answer）
+- `question.questions`は固定の質問。エンジンが`Runner.OpenQuestion`で開き、`Engine.Answer`で答えが来たら`outputs`の1つめのデータ名にJSON（id→answer）で保存して`answered`で遷移する
+- `question.role`を書くと、エージェントがタスクとして質問を組み立て、`ask_human`（ホストが`Engine.Answer`へ仲介する）で人間に聞く。1タスク中に複数回聞いてよく、エンジンは答えをその出現に溜める。エージェントが`done`で報告したとき、溜まった答え（id→answer、後勝ち）を`outputs`の1つめに保存し、ノードは`answered`で遷移する（`done`は`answered`に読み替える）。答えが1つも無いまま`done`なら無効な結果として差し戻す。エージェント定義の`outcomes`は`done`のみでよい
 - ゲート名`triage`・`deviation`は予約
+
+### スナップショットと計画外変更の検出の基準点
+
+エンジンは`agent`・`exec`の出現が終わるたびに`Runner.Snapshot`を取る。書き込めないエージェントの前後比較と、`commit`の計画外変更の検出は、**直前の境界のスナップショット**を基準にする（ノードの間で作業ツリーは変わらないので、前のノードの終わりがこのノードの始まりになる）。基準になるスナップショットが無い（フレームの最初のノード）ときだけ、進入時に取る。
 
 ### 読み込み時の検査（Set.Check）
 
