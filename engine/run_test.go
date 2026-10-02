@@ -153,3 +153,21 @@ func TestRunCallPassesFeedbackAndEndsThroughFrames(t *testing.T) {
 		t.Fatalf("want done, got %+v", s)
 	}
 }
+
+func TestFinishEventCarriesTheHeadOfAgentFeedback(t *testing.T) {
+	e, r := triageEngine(t, triageFiles())
+	s := mustAdvance(t, e)
+	fb := strings.Repeat("あ", 199) + "いう"
+	if err := e.ReportResult(context.Background(), "r", s.Occurrence, "done", fb); err != nil {
+		t.Fatal(err)
+	}
+	for _, ev := range r.events {
+		if ev.Kind == "finish" && ev.Occurrence == s.Occurrence {
+			if !strings.HasPrefix(ev.Detail, strings.Repeat("あ", 199)+"い") || strings.Contains(ev.Detail, "う") {
+				t.Fatalf("finish detail must hold the first 200 characters of the feedback: %q", ev.Detail)
+			}
+			return
+		}
+	}
+	t.Fatalf("no finish event for %s: %+v", s.Occurrence, r.events)
+}

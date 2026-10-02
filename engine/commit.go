@@ -208,7 +208,7 @@ func (m *mover) commit(fr *frame, cur *occurrence, n *Node) (Status, bool, error
 	if len(out.Deviations) > 0 {
 		return m.openDeviation(cur, out.Deviations, out.DeviationsHash)
 	}
-	_, err = m.e.putResult(m.run, cur, result{Outcome: OutcomeDone, Commit: out.Commit})
+	_, err = m.e.putResult(m.run, cur, result{Outcome: OutcomeDone, Commit: out.Commit}, "")
 	return Status{}, true, err
 }
 

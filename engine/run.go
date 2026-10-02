@@ -414,23 +414,37 @@ func (m *mover) finish(o *occurrence, outcome, feedback string, outputs []string
 		return Status{}, false, err
 	}
 	// Not applied means a concurrent call finished it first; reload either way.
-	_, err := m.e.putResult(m.run, o, result{Outcome: outcome, Feedback: feedback, Outputs: outputs})
+	_, err := m.e.putResult(m.run, o, result{Outcome: outcome, Feedback: feedback, Outputs: outputs}, "")
 	return Status{}, true, err
 }
 
-func (e *Engine) putResult(run RunID, o *occurrence, res result) (bool, error) {
+// putResult stores how o finished; detail goes into the finish event.
+func (e *Engine) putResult(run RunID, o *occurrence, res result, detail string) (bool, error) {
 	applied, err := e.create(run, prefResult+o.ID, res)
 	if err != nil || !applied {
 		return applied, err
 	}
-	e.log(run, Event{Kind: "finish", Occurrence: o.ID, Workflow: o.Workflow, Node: o.Node, Outcome: res.Outcome})
+	e.log(run, Event{Kind: "finish", Occurrence: o.ID, Workflow: o.Workflow, Node: o.Node, Outcome: res.Outcome, Detail: detail})
 	return true, nil
 }
 
+// feedbackLimit is how many characters of an agent's feedback the finish
+// event carries: enough to tell why it ended, without copying a report
+// into every log line.
+const feedbackLimit = 200
+
+func feedbackDetail(fb string) string {
+	if r := []rune(fb); len(r) > feedbackLimit {
+		return string(r[:feedbackLimit]) + "…"
+	}
+	return fb
+}
+
 // record stores a result reported from outside (an agent, a human); losing
-// the race to another report is an error the reporter must see.
-func (e *Engine) record(run RunID, o *occurrence, res result) error {
-	applied, err := e.putResult(run, o, res)
+// the race to another report is an error the reporter must see. detail goes
+// into the finish event.
+func (e *Engine) record(run RunID, o *occurrence, res result, detail string) error {
+	applied, err := e.putResult(run, o, res, detail)
 	if err == nil && !applied {
 		err = fmt.Errorf("engine: occurrence %s has already finished", o.ID)
 	}
@@ -540,8 +554,8 @@ func (m *mover) approval(fr *frame, cur *occurrence, n *Node) (Status, bool, err
 	}
 	var ref DataRef
 	if n.Target == string(DiffFromBase) {
-		ref = DataRef{Name: n.Target, Occurrence: cur.ID}
-		if err := m.e.runner.Diff(m.ctx, m.run, DiffFromBase, "", ref); err != nil {
+		ref = DataRef{Name: string(DiffCommitted), Occurrence: cur.ID}
+		if err := m.e.runner.Diff(m.ctx, m.run, DiffCommitted, "", ref); err != nil {
 			return Status{}, false, err
 		}
 	} else if ref, err = m.resolve(fr, n.Target, cur.ID); err != nil {
@@ -552,7 +566,13 @@ func (m *mover) approval(fr *frame, cur *occurrence, n *Node) (Status, bool, err
 		return Status{}, false, err
 	}
 	sum := sha256.Sum256(content)
-	req = GateRequest{Run: m.run, Occurrence: cur.ID, Gate: n.Gate, Target: n.Target, TargetHash: hex.EncodeToString(sum[:]), Subject: content}
+	subject := content
+	if n.Target == string(DiffFromBase) {
+		if subject, err = m.withUnpublished(content); err != nil {
+			return Status{}, false, err
+		}
+	}
+	req = GateRequest{Run: m.run, Occurrence: cur.ID, Gate: n.Gate, Target: n.Target, TargetHash: hex.EncodeToString(sum[:]), Subject: subject}
 	applied, err := m.e.create(m.run, prefGate+cur.ID, req)
 	if err != nil || !applied {
 		return Status{}, true, err
@@ -562,6 +582,30 @@ func (m *mover) approval(fr *frame, cur *occurrence, n *Node) (Status, bool, err
 	}
 	m.e.log(m.run, Event{Kind: "gate-open", Occurrence: cur.ID, Workflow: cur.Workflow, Node: cur.Node, Detail: n.Gate})
 	return Status{Kind: StatusGate, Occurrence: cur.ID, Gate: &req}, false, nil
+}
+
+// withUnpublished appends to a committed diff the files the worktree still
+// changes, which publish will not land. The hash stays the committed diff's:
+// the human approves what lands, and the list is only shown.
+func (m *mover) withUnpublished(diff []byte) ([]byte, error) {
+	base := m.workStart()
+	if base == "" {
+		return diff, nil
+	}
+	files, _, err := m.e.runner.ChangedSince(m.ctx, m.run, base)
+	if err != nil || len(files) == 0 {
+		return diff, err
+	}
+	var b strings.Builder
+	b.Write(diff)
+	if len(diff) > 0 && diff[len(diff)-1] != '\n' {
+		b.WriteByte('\n')
+	}
+	b.WriteString("\n## publishされない変更（未コミット）\n\n")
+	for _, f := range files {
+		b.WriteString(f + "\n")
+	}
+	return []byte(b.String()), nil
 }
 
 // waiting returns the occurrence the run is waiting on, if it is of kind.
@@ -630,7 +674,7 @@ func (e *Engine) reportResult(ctx context.Context, run RunID, occ, outcome, feed
 			if err := e.finishAgent(ctx, run, o, a, &res); err != nil {
 				return err
 			}
-			return e.record(run, o, res)
+			return e.record(run, o, res, feedbackDetail(feedback))
 		}
 		recs, err := e.loadRecords(run)
 		if err != nil {
@@ -652,7 +696,7 @@ func (e *Engine) reportResult(ctx context.Context, run RunID, occ, outcome, feed
 	if err := e.finishAgent(ctx, run, o, a, &res); err != nil {
 		return err
 	}
-	return e.record(run, o, res)
+	return e.record(run, o, res, feedbackDetail(feedback))
 }
 
 // finishAgent takes the end-of-occurrence snapshot and, for an agent that
@@ -702,7 +746,7 @@ func (e *Engine) decide(ctx context.Context, run RunID, occ string, d Decision) 
 	default:
 		return fmt.Errorf("engine: gate %s takes approved or rejected, not %q", st.Gate.Gate, d.Outcome)
 	}
-	if err := e.record(run, o, res); err != nil {
+	if err := e.record(run, o, res, ""); err != nil {
 		return err
 	}
 	e.log(run, Event{Kind: "decision", Occurrence: occ, Workflow: o.Workflow, Node: o.Node, Outcome: d.Outcome, Detail: d.Comment})

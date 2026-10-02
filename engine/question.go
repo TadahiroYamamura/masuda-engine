@@ -86,7 +86,7 @@ func (e *Engine) answer(ctx context.Context, run RunID, occ string, a Answer) er
 	if err := e.runner.PutData(ctx, run, DataRef{Name: name, Occurrence: occ}, content); err != nil {
 		return err
 	}
-	if err := e.record(run, o, result{Outcome: OutcomeAnswered, Outputs: []string{name}}); err != nil {
+	if err := e.record(run, o, result{Outcome: OutcomeAnswered, Outputs: []string{name}}, ""); err != nil {
 		return err
 	}
 	e.log(run, Event{Kind: "answer", Occurrence: occ, Workflow: o.Workflow, Node: o.Node, Outcome: OutcomeAnswered})
