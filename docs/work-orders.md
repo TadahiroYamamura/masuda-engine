@@ -83,6 +83,13 @@
 - **エージェントの`feedback`をログへ**: `finish`イベントの`detail`に`report_result`の`feedback`（先頭200文字）を含める
 - 契約テスト: C-E1〜C-E7が緑のまま。`contract/`に「`target: diff`のゲートの`Subject`が、未コミットの`notes.txt`を含むときにそれを『publishされない変更』として分けて載せる」ケースを**監督が足す**ので、着手時に確認
 
+## E11. commit前の承認（`target: step-diff`）
+
+- M12で、`target: diff`をコミット済みの差分にした結果、commitの前に置く`approve-interim`（`implement/build-step`）の承認対象が空になると分かった。契約に`target: step-diff`（ブランチ先頭..作業ツリー＝これからcommitされる内容）を足した（`workflow-schema.md`のapproval.target）
+- `Load`/`Check`で`step-diff`を受け付け、approvalノードは`Runner.Diff(DiffFromHead, "", into)`で差分を取り、その内容を`Subject`・ハッシュを`TargetHash`にする（「publishされない変更」の一覧は付けない。全部がこれからcommitされるため）
+- 同梱`implement/build-step`の`approve-interim`を`target: step-diff`に変える
+- 契約テスト: C-E1〜C-E7が緑のまま。`contract/`に「`target: step-diff`のゲートが`Diff(step-diff)`で開く」ケースを監督が足す
+
 ## 契約テストの対応表
 
 | テスト | 項目 |

@@ -65,7 +65,7 @@ nodes:
 |---|---|---|---|
 | `agent` | `role` | `max`、`inputs`、`outputs`、`egress`、`secrets` | エージェント定義が宣言したもの + `exhausted` |
 | `exec` | `command`（絶対パスのargv配列） | `inputs`、`outputs`、`max`、`egress`、`secrets`、`timeout`（Go duration） | `done`（exit 0）、`failed`、`exhausted` |
-| `approval` | `gate`、`target` | — | `approved`、`rejected` |
+| `approval` | `gate`、`target`（`plan`/`diff`/`step-diff`/データ名） | — | `approved`、`rejected` |
 | `question` | `role`または`questions`、`outputs`（1つ） | — | `answered` |
 | `foreach` | `over`、`body` | `on_incomplete`、`with`、`max` | `done`、bodyの終わり方（`stop`のとき）、`incomplete`（`continue`のときだけ） |
 | `workflow` | `workflow` | `with`、`max` | 呼んだワークフローの終わり方 |
@@ -73,7 +73,11 @@ nodes:
 | `publish` | — | `target`（`local`既定/`remote`）、`export` | `done` |
 | `discard` | — | `export` | `done` |
 
-- `approval.target`は`plan`、`diff`、または任意のデータ名。承認はその内容のハッシュに結びつく。**`target: diff`の承認対象は、baseからブランチ先頭（コミット済み）までの差分**で、publishされる内容と一致する。作業ツリーに残る未コミットの変更（deviationで加えなかったもの等）は`Subject`に「publishされない変更」として一覧だけ添える。エージェントが読むデータ`diff`（base..作業ツリー）とは別物
+- `approval.target`は次のどれか。承認はその内容のハッシュに結びつく
+  - `plan`: 承認済みの計画
+  - `diff`: **baseからブランチ先頭（コミット済み）までの差分**。publishされる内容と一致する。作業ツリーに残る未コミットの変更（deviationで加えなかったもの等）は`Subject`に「publishされない変更」として一覧だけ添える。review gateのようにcommitの**後**に置く承認に使う。エージェントが読むデータ`diff`（base..作業ツリー）とは別物
+  - `step-diff`: **ブランチ先頭から作業ツリーまで（未コミット）の差分**。これから`commit`される内容そのもの。interim gateのようにcommitの**前**に置く承認に使う
+  - 任意のデータ名: そのデータの内容
 - `foreach.over`は次のどれか。各項目は`step`・`perspective`・またはデータ名の単数形（`findings`→`finding`）で`body`の入力になる
   - `steps`（承認済み計画のステップ）、`perspectives`（全観点）、`perspectives(from=<node>)`（そのノードが`selected-perspectives`に選んだ観点）: **Runnerが項目を返す**（`Runner.Items`）
   - `<データ名>[]`（JSON配列のデータ）: **エンジンが項目を作る**。配列の各要素が項目で、キーは要素の`id`フィールド（無ければ添字）。任意のフィルタ`<データ名>[<field>=<value>]`で要素を絞れる（例: `findings[autofix=true]`。値は`true`/`false`/数値/文字列の等価比較のみ）。累積データ（下記）では、以前の反復が`done`で終わった要素（同じキー）は飛ばす

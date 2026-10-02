@@ -712,7 +712,8 @@ const stepWF = `version: 1
 inputs: [step]
 start: implement
 nodes:
-  implement: {type: agent, role: agents/implementer, inputs: [step], outputs: [commit-message], next: commit}
+  implement: {type: agent, role: agents/implementer, inputs: [step], outputs: [commit-message], next: approve-step}
+  approve-step: {type: approval, gate: interim, target: step-diff, next: {approved: commit, rejected: implement}}
   commit: {type: commit, scope: step, next: {done: end, rejected: implement}}
 `
 
@@ -752,13 +753,22 @@ func TestCE5_ForeachStepsCommitDeviationPublish(t *testing.T) {
 	s := advance(t, e, run)
 	_ = e.Decide(ctx, run, s.Occurrence, engine.Decision{Outcome: "approved", TargetHash: s.Gate.TargetHash})
 
-	// Step 1: implementer, then commit with a deviation (c.go) → deviation gate.
+	// Step 1: implementer, then the interim gate decides on what the commit
+	// will contain (step-diff), then commit with a deviation (c.go).
 	t1 := wantAgent(t, advance(t, e, run), "implementer")
 	if string(mustGet(t, st, t1.Inputs["step"])) == "" {
 		t.Fatalf("step item must be passed as input")
 	}
 	st.changed = []string{"a.go", "c.go", "go.sum"}
 	_ = e.ReportResult(ctx, run, t1.Occurrence, "done", "")
+	s = advance(t, e, run)
+	if s.Kind != engine.StatusGate || s.Gate.Gate != "interim" || s.Gate.Target != "step-diff" {
+		t.Fatalf("want interim gate on step-diff, got %+v", s)
+	}
+	if !st.has("Diff(step-diff)") || strings.Contains(string(s.Gate.Subject), "publishされない") {
+		t.Fatalf("a target: step-diff approval decides on HEAD..worktree with no unpublished list; calls=%v subject=%s", st.calls, s.Gate.Subject)
+	}
+	_ = e.Decide(ctx, run, s.Occurrence, engine.Decision{Outcome: "approved", TargetHash: s.Gate.TargetHash})
 	s = advance(t, e, run)
 	if s.Kind != engine.StatusGate || s.Gate.Gate != engine.GateDeviation {
 		t.Fatalf("want deviation gate for c.go, got %+v", s)
@@ -771,6 +781,11 @@ func TestCE5_ForeachStepsCommitDeviationPublish(t *testing.T) {
 	st.changed = []string{"b.go", "c.go"}
 	t2 := wantAgent(t, advance(t, e, run), "implementer")
 	_ = e.ReportResult(ctx, run, t2.Occurrence, "done", "")
+	s = advance(t, e, run)
+	if s.Kind != engine.StatusGate || s.Gate.Gate != "interim" {
+		t.Fatalf("want interim gate for step 2, got %+v", s)
+	}
+	_ = e.Decide(ctx, run, s.Occurrence, engine.Decision{Outcome: "approved", TargetHash: s.Gate.TargetHash})
 	rv := wantAgent(t, advance(t, e, run), "reviewer")
 	if st.count("Commit(step") != 2 {
 		t.Fatalf("want 2 step commits, got %d (calls %v)", st.count("Commit(step"), st.calls)
