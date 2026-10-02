@@ -375,7 +375,10 @@ type Runner interface {
 	// Diff computes a diff data value and stores it under ref.
 	Diff(ctx context.Context, run RunID, kind DiffKind, from SnapshotRef, into DataRef) error
 	// ChangedSince lists worktree paths that differ from a snapshot, with a
-	// hash identifying that exact set of changes.
+	// hash identifying that exact set of changes. An empty from means the
+	// branch head (HEAD): "everything not yet committed", which is what the
+	// commit node's deviation check and the review gate's unpublished list
+	// use.
 	ChangedSince(ctx context.Context, run RunID, from SnapshotRef) (files []string, hash string, err error)
 
 	// Items lists what a foreach iterates over, resolved from data.
