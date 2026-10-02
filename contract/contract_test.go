@@ -701,6 +701,7 @@ nodes:
     type: foreach
     over: steps
     body: workflows/step
+    on_incomplete: continue
     next: {done: review, incomplete: review}
   review: {type: agent, role: agents/reviewer, outputs: [findings], next: approve-review}
   approve-review: {type: approval, gate: review, target: diff, next: {approved: publish, rejected: plan}}
@@ -858,10 +859,32 @@ func TestCE6_ConcernOpensTriageFirst(t *testing.T) {
 
 func TestCE7_BundledDefinitionsCheckAndDevelopReachesPublish(t *testing.T) {
 	set := mustLoad(t, repoFS(nil))
+	// Only roots are checked as roots: a body workflow (e.g. one step of a
+	// build) legitimately assumes the state its caller enters it with.
+	called := map[string]bool{}
 	for path := range set.Workflows {
-		if p := set.Check(path); len(p) != 0 {
-			t.Fatalf("bundled %s: %+v", path, p)
+		reach, err := set.Reachable(path)
+		if err != nil {
+			t.Fatalf("Reachable(%s): %v", path, err)
 		}
+		for _, r := range reach {
+			if r != path && strings.HasPrefix(r, "workflows/") {
+				called[r] = true
+			}
+		}
+	}
+	roots := 0
+	for path := range set.Workflows {
+		if called[path] {
+			continue
+		}
+		roots++
+		if p := set.Check(path); len(p) != 0 {
+			t.Fatalf("bundled root %s: %+v", path, p)
+		}
+	}
+	if roots == 0 {
+		t.Fatalf("no root workflows among bundled definitions")
 	}
 	if _, ok := set.Workflows["workflows/develop"]; !ok {
 		t.Fatalf("bundled develop missing")

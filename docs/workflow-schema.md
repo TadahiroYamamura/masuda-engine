@@ -67,7 +67,7 @@ nodes:
 | `exec` | `command`（絶対パスのargv配列） | `inputs`、`outputs`、`max`、`egress`、`secrets`、`timeout`（Go duration） | `done`（exit 0）、`failed`、`exhausted` |
 | `approval` | `gate`、`target` | — | `approved`、`rejected` |
 | `question` | `role`または`questions`、`outputs`（1つ） | — | `answered` |
-| `foreach` | `over`、`body` | `on_incomplete`、`with`、`max` | `done`、`incomplete`、bodyの終わり方 |
+| `foreach` | `over`、`body` | `on_incomplete`、`with`、`max` | `done`、bodyの終わり方（`stop`のとき）、`incomplete`（`continue`のときだけ） |
 | `workflow` | `workflow` | `with`、`max` | 呼んだワークフローの終わり方 |
 | `commit` | `scope`（`step`/`plan`） | — | `done`、`rejected` |
 | `publish` | — | `target`（`local`既定/`remote`）、`export` | `done` |
@@ -80,6 +80,8 @@ nodes:
 - ゲート名`triage`・`deviation`は予約
 
 ### 読み込み時の検査（Set.Check）
+
+`Check`は**rootとして始めるワークフロー**に対して行う。他のワークフローから呼ばれる部品（`workflow`・`foreach`の`body`）は、呼び出し元の検査の中で、呼び出し時点の状態（承認済み計画の有無など）を前提に検査される。部品を単独でrootとして検査すると「承認前の書き込み」で拒否されうるが、それは誤りではない。rootの一覧は「どのワークフローの`Reachable`にも含まれないワークフロー」。
 
 - 参照先が存在し、呼び出しが循環しない
 - 各ノードが出しうるoutcomeすべてに行き先がある。出さないoutcomeへの行き先も誤り
