@@ -471,13 +471,15 @@ type Options struct {
 }
 
 // New makes an engine over a checked Set.
-func New(set *Set, store Store, runner Runner, opts Options) *Engine { panic(ErrNotImplemented) }
+func New(set *Set, store Store, runner Runner, opts Options) *Engine {
+	return newEngine(set, store, runner, opts)
+}
 
 // Start begins run with the root workflow and its inputs (already stored via
 // Runner.PutData with Occurrence ""). It records nothing but the start; call
 // Advance to move.
 func (e *Engine) Start(ctx context.Context, run RunID, root string, inputs []string) error {
-	return ErrNotImplemented
+	return e.start(run, root, inputs)
 }
 
 // Advance moves the run as far as it can without a human or an agent, runs
@@ -485,7 +487,7 @@ func (e *Engine) Start(ctx context.Context, run RunID, root string, inputs []str
 // waiting for. Idempotent: calling it again without new information returns
 // the same Status.
 func (e *Engine) Advance(ctx context.Context, run RunID) (Status, error) {
-	return Status{}, ErrNotImplemented
+	return e.walk(ctx, run, true)
 }
 
 // ReportResult records how an agent occurrence ended. The engine verifies the
@@ -493,13 +495,13 @@ func (e *Engine) Advance(ctx context.Context, run RunID) (Status, error) {
 // was written (via Runner.ReadOutput) and validates against schemas; failing
 // that it re-enters the node with the reason as feedback.
 func (e *Engine) ReportResult(ctx context.Context, run RunID, occurrence, outcome, feedback string) error {
-	return ErrNotImplemented
+	return e.reportResult(ctx, run, occurrence, outcome, feedback)
 }
 
 // Decide records a human's decision on the gate opened by occurrence. An
 // approval whose TargetHash does not match the open gate's is refused.
 func (e *Engine) Decide(ctx context.Context, run RunID, occurrence string, d Decision) error {
-	return ErrNotImplemented
+	return e.decide(ctx, run, occurrence, d)
 }
 
 // Answer records a human's answers to the question opened by occurrence.
@@ -515,5 +517,5 @@ func (e *Engine) ReportConcern(ctx context.Context, run RunID, occurrence, text 
 
 // Status returns the current status without moving the run.
 func (e *Engine) Status(ctx context.Context, run RunID) (Status, error) {
-	return Status{}, ErrNotImplemented
+	return e.walk(ctx, run, false)
 }
