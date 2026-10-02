@@ -1,23 +1,24 @@
 # HANDOFF
 ## 作業項目
-E2（検査と表示）完了。`Set.Check(root)`・`Set.Reachable`・`Set.Mermaid`
+E3（エンジンの中核）完了。`New`・`Start`・`Advance`（agent・approval・workflow・discard・end）・`Status`・`ReportResult`・`Decide`
 ## 完了した契約テスト
-C-E1・C-E2（`go test -count=1 ./contract/ -run 'TestCE1|TestCE2'` 緑、`go vet ./...` 指摘なし）。C-E3〜C-E5の各定義は`mustCheck`を通過し、`engine.New`のスタブでpanicして止まる（想定どおり）
+C-E1・C-E2・C-E3（`go test -count=1 ./contract/ -run 'TestCE1|TestCE2|TestCE3'` 緑、`go vet ./...` 指摘なし）。C-E4〜C-E7は想定どおり失敗する（exec・foreachなどに入ると`ErrNotImplemented`を返す。`Answer`・`ReportConcern`も`ErrNotImplemented`のまま。C-E7は同梱の`workflows/develop`が無いため）
 ## 未完と理由
-なし（E2の範囲内）。E3以降は範囲外のため未着手
+なし（E3の範囲内）。E4以降は範囲外のため未着手
 ## 次の一手
-E3（エンジンの中核）。`docs/work-orders.md`のE3を読む
+E4（exec・question・方針・スナップショット）。`docs/work-orders.md`のE4を読む
 ## 注意点
-- 実装の場所: `engine/check.go`（入口・参照・呼び出し循環・outcomeと`next`・予約ゲート・`with`のキー・閉路・export・共通ヘルパー）、`flow.go`（状態探索）、`avail.go`（データ可用性）、`reachable.go`、`mermaid.go`。内部テストは`engine/check_test.go`（各規則が意図した理由で拒否されること、C-E3〜E5の定義と同梱が通ること）
-- 検査の段: 参照解決＋呼び出し循環で問題があれば、それ以降（経路・状態・データ）は走らせない
-- outcomeの扱い: `exhausted`は実効max>0（agent/execは常に、他は`max`指定時）のとき行き先を書いてよいが必須でない。`blocked`への行き先は誤り。foreachの必須outcomeは、`continue`なら`done`・`incomplete`、`stop`なら`done`＋本体の終わり方（end label）。**foreachの`incomplete`は`stop`でも書いてよい（必須ではない）**: api.goのコメントは「continueのときだけ」だが、C-E5の定義が`stop`で`incomplete`に行き先を書いているため。E5で`stop`時に何を出すか実装するときはこれと揃えること（`stop`で本体が`done`以外で終わったら、そのend labelをforeachのoutcomeとして出す、という前提で検査している）
-- 状態探索: 書き込めるエージェント（`question`の`role`も含む）は承認済み計画が必要で、実行後は未コミット扱い。`plan`を書くノードは承認を無効化する。`approval target: plan`の`approved`で承認済み。`commit`は計画必須で`done`で未コミット解消、`rejected`では解消しない。`foreach over: steps`も承認済み計画を要求する。execは状態を変えない扱い（旧設計踏襲）
-- データ可用性: エンジンのデータ（`diff`・`step-diff`・`fix-diff`）は常に用意済み扱い。呼び出し元で用意済みのものは呼び出し先でも見える（名前で解決）。出力は`done`（questionは`answered`）でだけ増える。foreachの後には本体の出力を持ち出さない。`commit scope: step`は`step`が用意済みであることを要求する（foreach over stepsの本体なら満たす）
-- foreachの項目の入力名: `steps`→`step`、`findings`→`finding`、`perspectives*`→`perspective`、`<data>[]`→単数形（`-ies`→`-y`、末尾`s`を落とす、`ss`はそのまま）。`engine/check.go`の`itemInput`。E5で`Runner.Items`が返す`Item.Input`の期待値と揃えること
-- `export`は経路ごとの必須にしていない。到達範囲の誰も書かない名前だけ誤り
-- `Reachable`は root・呼び出し先ワークフロー・role のエージェント・言及されたデータ名のうちスキーマを持つもの（`schemas/<name>`）を返す（ソート済み）
-- `Mermaid`は呼び出し先をsubgraphで描く。deviationはcommitの前と書き込めないエージェントの後、triageは全体に1つ
+- 実装の場所: `engine/records.go`（Storeのキーと記録の型、読み込み）、`engine/run.go`（歩行・進入・遷移・各ノード・ReportResult/Decide）、`engine/validate.go`（出力のスキーマ検証）。`api.go`は関数本体だけ書き換えた。内部テスト`engine/run_test.go`（workflowノード越しの差し戻し・ゲートが1回だけ開くこと・Statusの振る舞い）
+- Storeのキー（すべて`<run>/`の下）: `start`（root・入力名）、`occ/<id>`（7桁ゼロ詰め、既存の最大+1）、`result/<id>`、`frame/<fid>`（rootは`root`、呼び出し先は呼び出し元の出現ID）、`frame-end/<fid>`（outcome文字列）、`gate/<occ>`（開いたGateRequest）、`blocked`（理由文字列）。`question/<occ>`・`concern/<occ>`は未使用（E4/E6で使う）。書き込みはすべて「キーが無いこと」をOpCheckするApplyで行い、負けたら読み直す
+- 位置の再計算: Advanceのたびに`blocked`→`frame-end/root`→occ/resultを全部読み、rootフレームの最後の出現から辿る。結果があれば遷移、`Exhausted`なら`exhausted`で終える、workflowノードなら子フレームへ降りる。`walk(mutate)`の1関数で、mutate=falseのときに書き込みが必要になると`errPending`を返す。`Status`・`ReportResult`・`Decide`はこの見るだけの歩行で「今待っている出現」を求めて照合する。よって**ReportResult/Decideの直後、Advance前のStatusはエラー**（`errPending`）
+- agentの`Inputs`（フレームの入力＋ノードの`inputs`＋エージェントの`inputs`）・`Outputs`（ノード＋エージェントの和）・`Policy`は進入時に出現へ固定する。SetPolicyは進入時に1回（exhaustedの進入では呼ばない）。execのSetPolicyはE4で実行直前に呼ぶこと
+- データの解決順（`mover.resolve`）: フレームの束縛済み入力 → run内で最後に受け付けた出力（resultの`Outputs`から出現ID順で求める）→ `diff`・`step-diff`は`Runner.Diff`でその出現の値として計算 → runの入力（Occurrence ""）。`fix-diff`は`ErrNotImplemented`（E5でforeach over findingsのスナップショットから計算する）
+- 進入回数: 同じフレームの出現を順に見て、そのノードの非exhausted出現を数え、判断済み（resultあり）のapprovalが出たら0に戻す。deviation・triageの判断で戻すかはE5/E6で決める（`enter`の中）
+- 差し戻し: resultの`Feedback`が次の出現の`Feedback`になる。次がworkflowなら子フレームの`Feedback`に入り、その最初のノードが受け取る。foreach（E5）も同じく子フレームの`Feedback`に入れること
+- approval: 開いたときにTargetHash（内容のsha256 hex）とSubject（内容そのもの）を`gate/<occ>`に保存し、OpenGateはその1回だけ。`target: diff`は`Runner.Diff(DiffFromBase)`をその出現の値として計算して使う。Decideは`approved`/`rejected`だけ受け付け、他（dismiss・halt・redo）は`ErrNotImplemented`（E5/E6）。承認のハッシュ不一致はエラーで、記録しない
+- ReportResult: 宣言外outcomeはエラー（記録せず、`invalid`イベントだけ出す）。`done`で出力の欠落・検証失敗は`Invalid`な結果として記録し、日本語の理由を差し戻しにして同じノードへ再進入（回数に数える）。受け付けた出力は`PutData(DataRef{name, occ})`。書き込めないエージェントのdeviation検査（C-E5の2つめ）はE5でここかagent待機中に挟むこと
+- イベント: start・enter・policy・finish・end・gate-open・decision・invalid・blocked
+- ヒューズ: 進入時に出現数が`Fuse`以上なら`blocked`
 ## 契約への提案
-監督の判断が要るもの（E2はこのまま完了扱いでよく、ブロッキングではない）:
-1. foreachの`incomplete`の意味: api.goの`OutcomeIncomplete`のコメント（continueのときだけ）と、`workflow-schema.md`の表（常に`done`・`incomplete`・bodyの終わり方）・C-E5の定義（`stop`で`incomplete`を書く）が食い違う。案: `stop`では本体のend labelをそのまま出し、`incomplete`は`continue`のときだけ出す、と表に明記する（現実装の前提）。その場合`stop`での`incomplete`の行き先を誤りにするかは要決定（現状は許容）
-2. 単独では承認前に書き込むワークフロー（foreach over stepsの本体など）をrootとして`Check`したときの扱い: C-E7は同梱の全ワークフローを`Check(path)`して問題ゼロを要求するが、現実装ではstepの本体が「承認前の書き込み」で拒否される。案A: 入力に`step`を宣言するワークフローは承認済み計画のある状態から始まるとみなす。案B: C-E7が検査するのはrootとして使うワークフローだけにする。案C: 同梱の本体を書き込まない形にする（実用上無理）。E7着手前に決める必要がある
+ブロッキングではないもの:
+1. `Status`が「Advanceが必要な状態」（結果報告直後など）を表す手段が契約に無い。現在は非公開エラーを返している。ホストが区別したいなら`StatusKind`に`pending`のような値を足すか、公開エラー変数を足す案がある
