@@ -1,39 +1,35 @@
 # HANDOFF
 ## 作業項目
-E7（同梱ワークフローとエージェントの移植）。定義は全部置いたが、C-E7は`findings`の用意済み検査で赤のまま止めた（「契約への提案」参照）
+E8（契約の修正への追従。E7の仕上げ）。完了
 ## 完了した契約テスト
-C-E1〜C-E6（緑）。C-E7は赤: `Check(workflows/develop)`と`Check(workflows/review)`が`findings`の用意済みで落ちる。`go vet ./...`指摘なし、`go test ./engine/`緑
+C-E1〜C-E7すべて緑（`go test -count=1 ./contract/`）。`go vet ./...`指摘なし、`go test ./engine/`緑
 ## 未完と理由
-- C-E7。`findings`を書くのはforeachの本体の中（reviewer）と条件付きの分岐（cross-cutting-verifier。explorerが`none_found`なら走らない）だけで、Checkはforeachの本体が書いたものを「その後どの経路でも用意済み」とは見ない（0回のことがある）。そのため次の4か所で「findingsが用意済みでない」になる
-  - `workflows/develop`の`fix`（`over: findings`）と`report`（synthesizerの入力`findings`）
-  - `workflows/implement/build-step`の`interim-fix`（`over: findings`）
-  - `workflows/review`の`report`
-- 実行時も同じで、C-E7のスタブ（観点0件・explorerは`none_found`）では`findings`が一度も書かれず、`fix`の`resolve`が「data "findings" is not available」で止まる
-- 11エージェントだけで契約内に収める方法は無い（C-E7の経路でpublishまでに`findings`を書きうるのはreviewerとverifierだけで、どちらもその経路では走らない）。synthesizerに`findings`を読ませないか、`findings`を書くだけのノードを足すか、契約を変えるかのどれかで、いずれも指示された範囲（11本の移植・旧どおりの構成）を外れるので、判断を仰ぐために止めた
-- 確認済み: 試しにdevelopの先頭に「`findings`を書くだけのエージェント」を置いて（コミットしていない）C-E7と同じ手順で歩かせると、seed → investigator → planner → plan gate → implementer → `/masuda/checks/test` → trigger-matcher → step commit → cross-cutting-explorer(none_found) → review-commit → synthesizer → review gate（diff） → publish 1回、で完了した。つまり残りの構成（plan gate、step commit、承認済みコミットのpublish、questionが無いこと）は問題ない
+なし
 ## 次の一手
-「契約への提案」の案を監督が選んだら、それに合わせて`workflows/develop`・`workflows/review`・`workflows/implement/build-step`（必要ならエンジンと`docs/workflow-schema.md`）を直し、`go test -count=1 ./contract/`を全部緑にする
+- `docs/work-orders.md`の次の項目へ。E系の項目はE8で一巡した
+- masuda側（M5〜）が下の「注意点」の取り決めに沿っているかを、masudaの契約テストで確かめる
 ## 注意点
-- 置いたもの（`engine/defaults/`）
-  - `workflows/develop`: investigate(investigator) ⇄ plan(planner, max 4) → approve-plan(gate plan, target plan) → implement(foreach steps → `workflows/implement/build-step`, stuck → approve-plan) → review(workflow `review/perspectives`) → cross-cutting(workflow `review/cross-cutting`) → fix(foreach findings → `fix-finding`, continue) → review-commit(commit plan) → report(synthesizer) → approve-review(gate review, target diff) → publish(export report)。却下・commit拒否はrework(implementer) → rework-test(exec `/masuda/checks/test`) → rework-commit(commit plan) → reviewへ戻る（旧どおり）。triageの行き先は書いていない
-  - `workflows/review`: review → cross-cutting → report → discard(export report, findings)
-  - `workflows/implement/build-step`: implement(max 3) → test(exec) → pick-perspectives(trigger-matcher) → interim-find(foreach `perspectives(from=pick-perspectives)`, with diff: step-diff) → interim-fix(foreach findings) → commit(step)。incompleteはapprove-interim(gate interim, target diff)へ
-  - `workflows/review/perspectives`・`perspective-review`・`cross-cutting`・`workflows/fix-finding`: 旧と同じ形
-  - 旧`investigate/plan/implement/review/default`の包みは無くした
-- エージェントの`inputs`はfrontmatterに明示した（旧版は本文で触れるだけ）。investigator `[instructions]`、planner `[instructions, investigation]`、implementer `[plan]`（buildでは`step`もフレームから入る）、trigger-matcher `[step-diff]`、reviewer `[perspective, diff]`、review-checker `[perspective, diff, findings]`、explorer `[diff]`、verifier `[cross-cutting-candidates]`、fixer `[finding]`、rechecker `[finding, fix-diff]`、synthesizer `[findings, diff]`
-- 旧reviewerの`resume: true`はスキーマに無いキーなので落とした。旧synthesizerが前提にしていた指摘の`status`（resolved/unresolved/open）は新しい`findings`スキーマに無いので、「autofixの指摘は差分と現在のコードを見て解消済みか確かめる」と書き換えた
-- 内部テスト`TestCheckAcceptsRunnableWorkflows`の「同梱ワークフローを全部rootとしてCheck」は、部品を単独で検査しない契約と食い違うので削った（rootの検査はC-E7が持つ）
-- masuda側（M5〜M7）への取り決め
-  - `/masuda/checks/test`: develop・build-stepのテスト実行は`exec`の`["/masuda/checks/test"]`。cwd `/workspace`で動き、0で通過。`docs/work-orders.md`のE7には「`/masuda/in/<occ>/run-check`」とあるが、監督の指示どおり`/masuda/checks/<名前>`に従った
-  - レビュー観点: `over: perspectives`の項目は`.masuda/reviews/*.md`（ファイル名が観点名、本文が定義）をmasudaが`Items`で返す前提。`perspectives(from=...)`は`selected-perspectives`（観点名の配列）で絞る。trigger-matcherは`/workspace/.masuda/reviews/*.md`のfrontmatter `trigger`を直接読む
-  - 特権コマンド: implementerのプロンプトは`run_privileged_command(name)`と`masuda privileged-command approve <name>`を案内している
-  - `over: steps`の`Item.Done`: stuck → approve-plan → implementで戻ったとき、コミット済みのステップは`Done`で返してもらう前提（旧どおり）
-  - `findings`の集約（下の提案2）は、契約で決まらなければmasudaの`Items(findings)`とデータの実体化で肩代わりすることになる
+- 実装の置き場所
+  - `engine/over.go`: `foreach.over`の構文（`steps`・`perspectives`・`perspectives(from=…)`はRunner、`findings`・`<data>[]`・`<data>[<field>=<value>]`はengine）。`overSource`・`itemInput`・`overFrom`もここ
+  - `engine/accumulate.go`: 累積データの判定（スキーマのトップレベル`x-masuda-accumulate: true`）、配列の検査、idで後勝ちのマージ、出力の保存（`putOutputs`。agentとexecの両方が通る）
+  - `engine/foreach.go`の`dataItems`・`doneKeys`・`fieldMatches`: データを回すforeachの項目作り
+- 累積データの保存の仕方: 書き込みのたびに「直前の累積値＋今回の配列」を`PutData(DataRef{name, 書いた出現})`で保存する。読み手には最新の書き手のDataRefを渡す。未書き込みなら、読む出現のDataRefに`[]`をPutDataして渡す。Runnerは累積を知らなくてよい
+- 累積データの読み出しは、フレームの束縛（`with`や呼び出し時のinputs）より常にrun全体の現在値を優先する（束縛名とデータ名が同じとき）
+- データを回すforeachの`Item`: キーは要素の`id`（文字列ならそのまま、それ以外はJSON表記）か、無ければ**配列全体での添字（0始まり）**。`Input`はデータ名の単数形。累積データでは、run中のどこかで同じデータを回してdoneで終わった反復のキーを`Done`にする。配列でなければrunはblocked
+- fix-diffの基準スナップショットは、データを回すforeachの反復ごとに取る（従来は`over: findings`のときだけ）
+- `ApprovedFiles`: 空は「何も加えない」。そのcommitのゲートに出たが承認されなかったファイルは`CommitRequest.Byproducts`に入る。run全体で承認済みのファイルは従来どおり累積して`Allowed`に入る
+- 同梱の変更
+  - `findings`スキーマ: `x-masuda-accumulate: true`、要素に必須の`id`（空白を含まない文字列）
+  - `develop`の`fix`、`build-step`の`interim-fix`: `over: findings[autofix=true]`
+  - reviewerは`id`を`<観点名>-<出現ID>-<連番>`、cross-cutting-verifierは`cross-cutting-<出現ID>-<連番>`で付ける。差し戻しのやり直しで前回の指摘を直すときは元の`id`を使う（置き換わる）
+  - review-checkerは累積の全件を受け取るので、自分の観点・直前のレビューの指摘だけを検証するようプロンプトで案内した。synthesizerは全件を受け取り、重複をまとめる
+- masuda側（M5〜）への取り決め
+  - `Runner.Items`が呼ばれるのは`over`が`steps`・`perspectives`・`perspectives(from=…)`のときだけ。`findings`の`Items`を実装する必要はもう無い
+  - `GetData`で`findings`を返すときは、engineが保存した値（累積後の配列）をそのまま返せばよい。masudaが貯める必要は無い
+  - 同じ`DataRef`に2回`PutData`されうる: 累積データを読みかつ書くエージェントで、未書き込みのとき（入力の`[]`と出力）。同梱には無いが、上書きを許すこと
+  - deviationゲートの`ApprovedFiles`は空のまま送ってよい（「何も加えない」）。承認されなかったファイルは`Byproducts`として渡るので、commitに含めず、そのcommitの計画外変更としても返さないこと。作業ツリーには残るので、次のcommitで再びゲートに出る
+  - `/masuda/checks/test`・観点の`Items`・`over: steps`の`Item.Done`はE7のときの取り決めのまま
+- 既知の制限: 累積データは要素を消せない。reviewerがやり直しで誤検知を取り下げても台帳に残る
 ## 契約への提案
-1. **`findings`の用意済み（C-E7を赤にしている原因）**。次のどれかを選んでほしい
-   - 案A（契約変更・推奨）: foreachに「本体が書いたJSON配列を集めて、foreachの後にそのデータ名で1つにする」キーを足す（例: `collect: [findings]`。0回なら`[]`）。Checkはforeachの後でそのデータを用意済みと見る。下の2も同時に解ける
-   - 案B（契約変更）: エンジンが用意するデータに`findings`を加え、run中に書かれた`findings`の和（無ければ`[]`）にする
-   - 案C（契約内・同梱だけ）: developとreviewの先頭に「`findings`に`[]`を書くだけ」のノードを置く。execは出力を書けるがC-E7のスタブの`RunCommand`は出力を返さないので、エージェント（12本目）になる。LLMを1回空回しする上、2の問題は残る
-   - 案D（契約内・同梱だけ）: synthesizerの入力を`diff`だけにし、指摘はmasudaが別の経路（例: `/masuda/findings.json`）で見せる。データの外の取り決めが増える
-2. **`findings`が後勝ち**。データは名前ごとに最後の値が見えるので、観点が2つ以上あると、`fix`（`over: findings`）とsynthesizerは最後に書いた観点（またはverifier）の指摘しか見ない。途中レビューの指摘も最終レビューの指摘で見えなくなる。旧エンジンは指摘をストアに貯めてstatusを持たせていた。案Aか案Bで集約を契約にするか、masudaの`Items(findings)`・実体化で貯める取り決めにするかを決めてほしい
-3. `docs/work-orders.md`のE7はテスト実行を「`/masuda/in/<occ>/`に展開した`run-check`」としているが、指示は`/masuda/checks/<名前>`。作業指示の文面を直すとよい（契約ファイルではないが監督の持ち物なので触っていない）
+1. （任意・急がない）累積データの要素を取り下げる手段。今はreview-checkerが`inaccurate`にしても誤検知は消えず、synthesizerが拾う。案: 同梱`findings`の要素に任意の`withdrawn: true`を足し、同じ`id`で書き直せば取り下げとする（fixの`findings[autofix=true]`からはreviewerが`autofix: false`にして外す）。スキーマの「…」の範囲で同梱だけで済むが、指示の範囲外なので入れていない
+2. E7の提案3（`docs/work-orders.md`のE7のテスト実行の文面）は監督が494f76aで直したので解消
