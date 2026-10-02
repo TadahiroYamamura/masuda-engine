@@ -11,7 +11,7 @@ import (
 )
 
 var (
-	egressRe = regexp.MustCompile(`^(\*\.)?[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)*(:[0-9]{1,5})?$`)
+	egressRe = regexp.MustCompile(`^(\*\.)?[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)*$`)
 	secretRe = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 )
 
@@ -234,7 +234,17 @@ func parseNode(ref, id string, v *yaml.Node, le *loadError) *Node {
 				err = fmt.Errorf("a question node writes exactly one output")
 			}
 		case "egress":
-			n.Egress, err = matchingList(val, egressRe, "host")
+			var hosts []string
+			if hosts, err = scalarList(val); err == nil {
+				for _, h := range hosts {
+					if err == nil && strings.Contains(h, ":") {
+						err = fmt.Errorf("egress %q: a port cannot be written (masuda's settings.json egress takes hosts only)", h)
+					}
+				}
+			}
+			if err == nil {
+				n.Egress, err = matchingList(val, egressRe, "host")
+			}
 		case "secrets":
 			n.Secrets, err = matchingList(val, secretRe, "secret name")
 		case "gate":

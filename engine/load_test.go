@@ -25,7 +25,7 @@ func TestLoadAcceptsEveryNodeType(t *testing.T) {
 inputs: [instructions]
 start: a
 nodes:
-  a: {type: agent, role: agents/a, inputs: [instructions], outputs: [out], max: 2, egress: [api.example.com, "*.example.org:443"], secrets: [API_KEY], next: {done: x, redo: a, exhausted: end:gave_up}}
+  a: {type: agent, role: agents/a, inputs: [instructions], outputs: [out], max: 2, egress: [api.example.com, "*.example.org"], secrets: [API_KEY], next: {done: x, redo: a, exhausted: end:gave_up}}
   x: {type: exec, command: ["/usr/bin/true", "rel/arg"], timeout: 2m, next: {done: q, failed: x}}
   q: {type: question, questions: [{id: scope, text: "ok?", options: [yes, split]}], outputs: [answers], next: {answered: r}}
   r: {type: question, role: agents/a, outputs: [more], next: {answered: g}}
@@ -79,6 +79,7 @@ func TestLoadRejectionReasons(t *testing.T) {
 		"end:done":                {node("{type: discard, next: end:done}"), "reserved"},
 		"max zero":                {node("{type: agent, role: agents/a, max: 0, next: end}"), "at least 1"},
 		"bad data name":           {node("{type: discard, export: [Plan], next: end}"), "data name"},
+		"egress with port":        {node("{type: exec, command: [/bin/true], egress: [\"api.example.com:443\"], next: end}"), "port"},
 		"bad timeout":             {node("{type: exec, command: [/bin/true], timeout: soon, next: end}"), "timeout"},
 		"question two outputs":    {node("{type: question, questions: [{id: a, text: b}], outputs: [x, y], next: end}"), "exactly one output"},
 		"question role and fixed": {node("{type: question, role: agents/a, questions: [{id: a, text: b}], outputs: [x], next: end}"), "exactly one of"},
