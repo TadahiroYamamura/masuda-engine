@@ -72,6 +72,7 @@
 
 - 累積データには要素を消す手段が無く、review-checkerが`inaccurate`とした誤検知も台帳に残ってsynthesizerが拾う。案: 累積データの要素に`withdrawn: true`を同じ`id`で書けば、読み出しから除く（累積の一般規則として契約に足す）。foreachのフィルタは`withdrawn`な要素を常に除く
 - 契約変更を伴うので、監督が決めてから着手する
+- 合わせて: ノードの`egress:`でポート付き（`host:port`）を`Load`で拒否する（`workflow-schema.md`に明記済み。masudaの`settings.json`がポートを許さないため、許すと常にBLOCKEDになる）
 
 ## 契約テストの対応表
 
