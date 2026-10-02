@@ -18,7 +18,8 @@
       "severity": {"enum": ["高", "中", "低"]},
       "autofix": {"type": "boolean"},
       "message": {"type": "string", "pattern": "\\S"},
-      "suggestion": {"type": "string"}
+      "suggestion": {"type": "string"},
+      "withdrawn": {"type": "boolean"}
     }
   }
 }

@@ -16,6 +16,13 @@ func TestMergeAccumulated(t *testing.T) {
 	if string(got) != `[{"id":"a","v":3},{"v":2},{"v":2},{"id":"b"}]` {
 		t.Fatalf("got %s", got)
 	}
+	got, err = mergeAccumulated([]byte(`[{"id":"a"},{"id":"b"}]`), []byte(`[{"id":"a","withdrawn":true},{"id":"c","withdrawn":true},{"id":"d","withdrawn":false}]`))
+	if err != nil || string(got) != `[{"id":"b"},{"id":"d","withdrawn":false}]` {
+		t.Fatalf("withdrawn elements are dropped: %s %v", got, err)
+	}
+	if got, _ := mergeAccumulated([]byte(`[]`), []byte(`[{"id":"a","withdrawn":true}]`)); string(got) != `[]` {
+		t.Fatalf("withdrawing everything leaves []: %s", got)
+	}
 	if _, err := mergeAccumulated([]byte(`[]`), []byte(`{"id":"a"}`)); err == nil {
 		t.Fatal("a non-array write must be refused")
 	}
@@ -48,6 +55,55 @@ func (r *accRunner) Items(_ context.Context, _ RunID, over string, _ DataRef) ([
 func (r *accRunner) Diff(_ context.Context, _ RunID, _ DiffKind, _ SnapshotRef, into DataRef) error {
 	r.data[into.Occurrence+"/"+into.Name] = []byte("diff")
 	return nil
+}
+
+// A later write that withdraws a finding by its id removes it from what a
+// data foreach iterates and from what a reader receives.
+func TestWithdrawnFindingLeavesForeachAndReaders(t *testing.T) {
+	set, err := Load(mapFS(map[string]string{
+		"agents/reviewer.md": agentDef("reviewer", "Read", []string{"findings"}),
+		"agents/fixer.md":    "---\nname: fixer\ndescription: d\ntools: Read\ninputs: [finding]\noutcomes:\n  done: d\n---\nbody\n",
+		"agents/reader.md":   "---\nname: reader\ndescription: d\ntools: Read\ninputs: [findings]\noutcomes:\n  done: d\n---\nbody\n",
+		"workflows/x.yaml": "version: 1\nstart: review1\nnodes:\n" +
+			"  review1: {type: agent, role: agents/reviewer, next: review2}\n" +
+			"  review2: {type: agent, role: agents/reviewer, next: fix}\n" +
+			"  fix: {type: foreach, over: findings, body: workflows/fix, next: read}\n" +
+			"  read: {type: agent, role: agents/reader, next: end}\n",
+		"workflows/fix.yaml": "version: 1\ninputs: [finding]\nstart: f\nnodes:\n" +
+			"  f: {type: agent, role: agents/fixer, next: end}\n",
+	}), Bundled())
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := &accRunner{fakeRunner: fakeRunner{data: map[string][]byte{}, outputs: map[string][]byte{}}}
+	e := New(set, &kvStore{m: map[string][]byte{}}, r, Options{})
+	ctx := context.Background()
+	_ = e.Start(ctx, "r", "workflows/x", nil)
+	agent := func(name string) *AgentTask {
+		t.Helper()
+		s, err := e.Advance(ctx, "r")
+		if err != nil || s.Kind != StatusAgent || s.Task.Agent.Name != name {
+			t.Fatalf("want %s, got %+v (%v)", name, s, err)
+		}
+		return s.Task
+	}
+	data := func(ref DataRef) string { return string(r.data[ref.Occurrence+"/"+ref.Name]) }
+
+	r.outputs["findings"] = []byte("[" + finding("a", true) + "," + finding("b", true) + "]")
+	_ = e.ReportResult(ctx, "r", agent("reviewer").Occurrence, "done", "")
+	gone := strings.Replace(finding("b", true), `"autofix"`, `"withdrawn":true,"autofix"`, 1)
+	r.outputs["findings"] = []byte("[" + gone + "]")
+	_ = e.ReportResult(ctx, "r", agent("reviewer").Occurrence, "done", "")
+
+	f := agent("fixer")
+	if !strings.Contains(data(f.Inputs["finding"]), `"id":"a"`) {
+		t.Fatalf("the foreach takes a: %s", data(f.Inputs["finding"]))
+	}
+	_ = e.ReportResult(ctx, "r", f.Occurrence, "done", "")
+	got := data(agent("reader").Inputs["findings"])
+	if strings.Contains(got, `"id":"b"`) || !strings.Contains(got, `"id":"a"`) {
+		t.Fatalf("the reader sees a only: %s", got)
+	}
 }
 
 func finding(id string, autofix bool) string {

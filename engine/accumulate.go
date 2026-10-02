@@ -60,10 +60,26 @@ func elementID(el json.RawMessage) string {
 	return buf.String()
 }
 
+// withdrawn reports whether an element carries "withdrawn": true.
+func withdrawn(el json.RawMessage) bool {
+	var obj map[string]json.RawMessage
+	if json.Unmarshal(el, &obj) != nil {
+		return false
+	}
+	var v bool
+	return json.Unmarshal(obj["withdrawn"], &v) == nil && v
+}
+
 // mergeAccumulated adds a write to the accumulated value: an element whose
 // id is already there replaces it in place (last write wins), any other is
 // appended. Replacing in place rather than moving to the end keeps the order
 // readers see stable across rewrites of the same finding.
+//
+// Withdrawn elements are dropped from the stored value rather than kept and
+// filtered on each read, so GetData, inputs and foreach all see the same
+// array without every reader knowing the rule. The cost is that rewriting a
+// withdrawn id without withdrawn appends it at the end instead of at its old
+// place.
 func mergeAccumulated(cur, add []byte) ([]byte, error) {
 	base, err := jsonArray(cur)
 	if err != nil {
@@ -90,10 +106,13 @@ func mergeAccumulated(cur, add []byte) ([]byte, error) {
 		}
 		base = append(base, el)
 	}
-	if base == nil {
-		base = []json.RawMessage{}
+	kept := []json.RawMessage{}
+	for _, el := range base {
+		if !withdrawn(el) {
+			kept = append(kept, el)
+		}
 	}
-	return json.Marshal(base)
+	return json.Marshal(kept)
 }
 
 // putOutputs stores what occurrence occ wrote. Accumulated data is stored
