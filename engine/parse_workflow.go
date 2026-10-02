@@ -262,7 +262,7 @@ func parseNode(ref, id string, v *yaml.Node, le *loadError) *Node {
 				n.PublishTarget = s
 			} else {
 				if err == nil && !dataNameRe.MatchString(s) {
-					err = fmt.Errorf("must be plan, diff, or a data name")
+					err = fmt.Errorf("must be plan, diff, step-diff, or a data name")
 				}
 				n.Target = s
 			}

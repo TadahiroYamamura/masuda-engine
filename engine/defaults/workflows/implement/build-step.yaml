@@ -41,7 +41,7 @@ nodes:
   approve-interim:
     type: approval
     gate: interim
-    target: diff
+    target: step-diff
     next:
       approved: commit
       rejected: implement

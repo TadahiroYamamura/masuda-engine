@@ -194,7 +194,8 @@ func TestCheckAcceptsRunnableWorkflows(t *testing.T) {
 				"  approve-review: {type: approval, gate: review, target: diff, next: {approved: publish, rejected: plan}}\n" +
 				"  publish: {type: publish, target: local, export: [findings], next: end}\n",
 			"workflows/step.yaml": "version: 1\ninputs: [step]\nstart: implement\nnodes:\n" +
-				"  implement: {type: agent, role: agents/implementer, inputs: [step], outputs: [commit-message], next: commit}\n" +
+				"  implement: {type: agent, role: agents/implementer, inputs: [step], outputs: [commit-message], next: approve-step}\n" +
+				"  approve-step: {type: approval, gate: interim, target: step-diff, next: {approved: commit, rejected: implement}}\n" +
 				"  commit: {type: commit, scope: step, next: {done: end, rejected: implement}}\n",
 		},
 	}

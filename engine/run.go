@@ -558,14 +558,25 @@ func (m *mover) approval(fr *frame, cur *occurrence, n *Node) (Status, bool, err
 	if err := m.need(); err != nil {
 		return Status{}, false, err
 	}
+	// diff and step-diff are computed here rather than through resolve:
+	// resolve would hand back a frame binding or an earlier value of the
+	// same name, while a gate must decide on the branch as it is now.
 	var ref DataRef
-	if n.Target == string(DiffFromBase) {
+	switch n.Target {
+	case string(DiffFromBase):
 		ref = DataRef{Name: string(DiffCommitted), Occurrence: cur.ID}
 		if err := m.e.runner.Diff(m.ctx, m.run, DiffCommitted, "", ref); err != nil {
 			return Status{}, false, err
 		}
-	} else if ref, err = m.resolve(fr, n.Target, cur.ID); err != nil {
-		return Status{}, false, fmt.Errorf("%s: node %s: target: %w", fr.Workflow, n.ID, err)
+	case string(DiffFromHead):
+		ref = DataRef{Name: string(DiffFromHead), Occurrence: cur.ID}
+		if err := m.e.runner.Diff(m.ctx, m.run, DiffFromHead, "", ref); err != nil {
+			return Status{}, false, err
+		}
+	default:
+		if ref, err = m.resolve(fr, n.Target, cur.ID); err != nil {
+			return Status{}, false, fmt.Errorf("%s: node %s: target: %w", fr.Workflow, n.ID, err)
+		}
 	}
 	content, err := m.e.runner.GetData(m.ctx, m.run, ref)
 	if err != nil {

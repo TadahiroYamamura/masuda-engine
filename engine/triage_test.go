@@ -2,6 +2,8 @@ package engine
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"strings"
 	"testing"
@@ -311,5 +313,65 @@ func TestCommitAndReviewGateCompareWithTheBranchHead(t *testing.T) {
 	}
 	if subj := string(s.Gate.Subject); !strings.HasPrefix(subj, "diff") || !strings.Contains(subj, "publishされない変更") || !strings.Contains(subj, "a.go") {
 		t.Fatalf("subject: %s", subj)
+	}
+}
+
+type diffKindRunner struct {
+	e5Runner
+	kinds []DiffKind
+}
+
+func (r *diffKindRunner) Diff(_ context.Context, _ RunID, kind DiffKind, _ SnapshotRef, into DataRef) error {
+	r.kinds = append(r.kinds, kind)
+	r.data[into.Occurrence+"/"+into.Name] = []byte(string(kind) + " content")
+	return nil
+}
+
+func TestStepDiffAndDiffGatesAskForDifferentDiffs(t *testing.T) {
+	set, err := Load(mapFS(map[string]string{
+		"agents/planner.md": agentDef("planner", "Read", []string{"plan"}),
+		"workflows/x.yaml": "version: 1\ninputs: [instructions]\nstart: plan\nnodes:\n" +
+			"  plan: {type: agent, role: agents/planner, inputs: [instructions], next: approve}\n" +
+			"  approve: {type: approval, gate: plan, target: plan, next: {approved: interim, rejected: plan}}\n" +
+			"  interim: {type: approval, gate: interim, target: step-diff, next: {approved: c, rejected: plan}}\n" +
+			"  c: {type: commit, scope: plan, next: {done: review, rejected: review}}\n" +
+			"  review: {type: approval, gate: review, target: diff, next: {approved: pub, rejected: plan}}\n" +
+			"  pub: {type: publish, next: end}\n",
+	}), Bundled())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p := set.Check("workflows/x"); len(p) != 0 {
+		t.Fatalf("Check: %+v", p)
+	}
+	r := &diffKindRunner{e5Runner: e5Runner{fakeRunner: fakeRunner{data: map[string][]byte{"/instructions": []byte("x")}, outputs: map[string][]byte{"plan": []byte(e5Plan)}},
+		changed: []string{"a.go"}}}
+	e := New(set, &kvStore{m: map[string][]byte{}}, r, Options{})
+	ctx := context.Background()
+	_ = e.Start(ctx, "r", "workflows/x", []string{"instructions"})
+	s := mustAdvance(t, e)
+	_ = e.ReportResult(ctx, "r", s.Occurrence, "done", "")
+	s = mustAdvance(t, e)
+	_ = e.Decide(ctx, "r", s.Occurrence, Decision{Outcome: "approved", TargetHash: s.Gate.TargetHash})
+
+	s = mustAdvance(t, e)
+	if s.Kind != StatusGate || s.Gate.Gate != "interim" || s.Gate.Target != "step-diff" {
+		t.Fatalf("want interim gate on step-diff, got %+v", s)
+	}
+	if len(r.kinds) != 1 || r.kinds[0] != DiffFromHead {
+		t.Fatalf("target: step-diff must ask for DiffFromHead, got %v", r.kinds)
+	}
+	sum := sha256.Sum256([]byte("step-diff content"))
+	if string(s.Gate.Subject) != "step-diff content" || s.Gate.TargetHash != hex.EncodeToString(sum[:]) {
+		t.Fatalf("step-diff subject is the diff alone (no unpublished list) and its hash: %+v", s.Gate)
+	}
+	_ = e.Decide(ctx, "r", s.Occurrence, Decision{Outcome: "approved", TargetHash: s.Gate.TargetHash})
+
+	s = mustAdvance(t, e)
+	if s.Kind != StatusGate || s.Gate.Gate != "review" {
+		t.Fatalf("want review gate, got %+v", s)
+	}
+	if len(r.kinds) != 2 || r.kinds[1] != DiffCommitted {
+		t.Fatalf("target: diff must ask for DiffCommitted, got %v", r.kinds)
 	}
 }

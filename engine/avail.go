@@ -106,7 +106,9 @@ func (a *avail) effect(w *Workflow, nd *Node, have map[string]bool, report bool)
 		}
 		out[done] = withOutputs(a.c.nodeOutputs(nd))
 	case NodeApproval:
-		need(nd.Target, "target %q is not available on every path to this node", nd.Target)
+		if nd.Target != string(DiffFromBase) && nd.Target != string(DiffFromHead) {
+			need(nd.Target, "target %q is not plan, diff, step-diff, or data available on every path to this node", nd.Target)
+		}
 	case NodeCommit:
 		if nd.Scope == "step" {
 			need("step", "scope: step needs the input %q, which is not available on every path to this node (use it in the body of a foreach over steps)", "step")
