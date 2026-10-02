@@ -71,7 +71,9 @@
 ## E9. 指摘の取り下げ（後回し。M8の実機1周の後に判断）
 
 - 累積データには要素を消す手段が無く、review-checkerが`inaccurate`とした誤検知も台帳に残ってsynthesizerが拾う。案: 累積データの要素に`withdrawn: true`を同じ`id`で書けば、読み出しから除く（累積の一般規則として契約に足す）。foreachのフィルタは`withdrawn`な要素を常に除く
-- 契約変更を伴うので、監督が決めてから着手する
+- 契約変更を伴うので、監督が決めてから着手する → **決めた**: 累積データの要素に`withdrawn: true`を同じ`id`で書けば読み出しとforeachから除く。`workflow-schema.md`「累積データ」に追記すること（監督が文面を書く前に着手してよい。実装後にHANDOFFで文面案を出す）
+- **fixerの出口**（M8で実機確認）: 同梱fixerの`outcomes`に`cannot_fix`（直せない理由を`feedback`に）を足し、`fix-finding`で`cannot_fix: end:unresolved`に流す。recheckerの`unresolved`からの再試行回数は`max`で既に抑えている
+- **観点の置き場所**（M8で実機確認）: trigger-matcherのプロンプトを、ゲストのcloneの`/workspace/.masuda/reviews/`ではなく**`/masuda/reviews/*.md`**（masudaが起動時に置くスナップショット）を読むように直す。reviewerへ渡る`perspective`の中身は従来どおり`Runner.Items`経由
 - 合わせて: ノードの`egress:`でポート付き（`host:port`）を`Load`で拒否する（`workflow-schema.md`に明記済み。masudaの`settings.json`がポートを許さないため、許すと常にBLOCKEDになる）
 
 ## 契約テストの対応表
