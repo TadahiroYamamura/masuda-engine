@@ -1,28 +1,29 @@
 # HANDOFF
 ## 作業項目
-E5（foreach・commit・publish・discard・逸脱）完了。foreachノード、commitノードとdeviationゲート、書き込めないエージェントの前後比較、publishノード、deviationの`Decide`（`ApprovedFiles`）、`fix-diff`の解決
+E6（triage・ログ）完了。あわせてE5から持ち越した2件（role付きquestionの終わり方、publishの`Commit`を差分レビュー承認時点のコミットに結びつける）を実装した
 ## 完了した契約テスト
-C-E1〜C-E5（`go test -count=1 ./contract/ -run 'TestCE1|TestCE2|TestCE3|TestCE4|TestCE5'` 緑、`go vet ./...` 指摘なし）。C-E6（`ReportConcern`が`ErrNotImplemented`）・C-E7（同梱`workflows/develop`が無い）は想定どおり失敗
+C-E1〜C-E6（`go test -count=1 ./contract/ -run 'TestCE1|TestCE2|TestCE3|TestCE4|TestCE5|TestCE6'` 緑、`go vet ./...` 指摘なし）。C-E7は同梱`workflows/develop`が無いため想定どおり失敗
 ## 未完と理由
-- role付きquestionの終わり方（契約`docs/workflow-schema.md`で決定済み: `ask_human`の答えを出現に溜め、`done`で`outputs[0]`に保存して`answered`）は未実装。E5の指示の実装項目に含まれていなかったため手を付けていない。`ReportResult`はquestionノードに`ErrNotImplemented`を返したまま。C-E7の`develop`で必要になるならE7の前に入れる
-- publishの`Commit`は「直近の`Runner.Commit`が返したハッシュ」で代用（E5の指示どおり）。reviewゲート（`target: diff`）承認時点のstagingのコミットを記録する形にはなっていない
+なし（E6の範囲と持ち越し2件はすべて実装済み）
 ## 次の一手
-E6（triage・ログ）。`docs/work-orders.md`のE6を読む
+E7（同梱ワークフローとエージェントの移植）。`docs/work-orders.md`のE7を読む
 ## 注意点
-- 実装の場所: `engine/foreach.go`（`prepareItems`・`foreach`・`iterationTree`・`stepFrame`）、`engine/commit.go`（`prepareBase`・`commit`・`openDeviation`・`readOnlyDeviation`・`decideDeviation`・`publish`）。`run.go`は`step`の分岐・`enter`での基準/項目の固定・`resolve`の`fix-diff`・`bindInputs`（callとforeachで共用）・`finishAgent`・`decide`の振り分けを変えた。内部テスト`engine/foreach_test.go`
-- Storeのキー追加: `deviation/<occ>/<nnn>`（`devGate`: GateRequestとファイル一覧）、`decision/<occ>/<nnn>`（Decision、createで1回だけ）。`loadRecords`が`recs.devs[occ]`に読み込む。frameに`Parent`・`Over`・`Item`・`ItemRef`・`Tree`、occurrenceに`Base`・`BaseHash`・`Items`、resultに`Deviation`・`DeviationHash`・`Commit`を追加
-- foreach: 項目は進入時に出現へ固定。フレームID`<occ>.<n>`はDoneも含めた1始まりの番号。項目は`PutData(DataRef{Item.Input, fid})`して`frame.Inputs[Item.Input]`に束縛（`Input`が空なら`itemInput(over)`）。差し戻しは最初に作るフレームの`Feedback`へ。`perspectives(from=<node>)`はフレーム内でそのノードが最後に`selected-perspectives`を出した出現を`from`にする
-- 基準スナップショット: agent/execは進入時に「同じフレームで直前に終わった出現の`result.Snapshot`」、無ければ進入時に`Snapshot(occ)`。commitの基準は「run全体で最後に成功したcommit以後、最初のagent/execの`Base`」。契約の「直前の境界」を文字通りcommitに当てると、実装エージェントの終わり（変更後）になり実機では常に空になるため、こう解釈した
-- 書き込めないエージェント: 進入時に`ChangedSince(Base)`のハッシュを`BaseHash`に残し、報告時（Invalidでも）にもう一度取ってハッシュが違い一覧が空でなければ`result.Deviation`。監督の指示は「終了時の`ChangedSince`が空でなければ」だったが、契約テストのstubは`from`を無視して同じ一覧を返すため、そのままだとC-E5の1つめでreviewer（Read, Grep）が誤ってdeviationゲートを開く。契約の文言「前後比較」に沿う比較にした（実機では進入時は空なので同じ結果になる）。却下はblocked、承認でoutcomeどおり遷移
-- commit: 最後のdeviationゲートが未決なら待つ、却下なら`rejected`（差し戻し＝却下ファイル＋コメント）。ゲートがまだ無いときだけ`ChangedSince`で計画外を見る。承認後は見直さずに`Runner.Commit`する（人間が見ていない作業ツリーについて聞き直さないため。Allowed外はホストが`Deviations`で返し、次のゲートを開く。C-E5もステップ1承認後に`changed`をステップ2の内容に差し替えてからAdvanceするので、見直すと誤ってゲートが開く）。`Allowed`は`scope: step`ならそのステップの`files`（`stepFrame`で親をたどり`ItemRef`を読む）、`plan`なら全ステップの`files`、に加えてrun全体で承認された`ApprovedFiles`（空の承認はゲートのファイル全部を承認したとみなす）。`Message`は最後のcommit以後に書かれた`commit-message`、無ければステップの`description`（planスコープは`summary`）
-- 「同じフレーム系列でdeviationが承認したファイル」はrun全体の累積で実装した。C-E5でステップ1で承認した`c.go`をステップ2（兄弟フレーム）で許す必要があり、runのフレームはすべてrootの子孫なので同じになる
-- `Decide`: ゲートが`deviation`なら`decideDeviation`（approvedはハッシュ一致と`ApprovedFiles`⊆ゲートのファイルを確認）。`dismiss`/`halt`/`redo`は`ErrNotImplemented`のまま（E6）
-- 進入回数の数え直し: `records.decided`（approvalのresult、またはその出現が開いたdeviationゲートの判断）で数え直す。questionの`Answer`は数え直しに含めていない。E6のtriageもここに足す
-- E4からの注意点（exec・固定question・StatusPending・データ解決順）は変わっていない
+- 実装の場所: `engine/triage.go`（`reportConcern`・`loadConcerns`・`triage`・`openTriage`・`leaf`・`decideTriage`）、`engine/question.go`（`collectAnswer`・`collectedAnswers`）、`engine/commit.go`（`publish`・`approvedCommit`、`lastCommit`は`records`のメソッドに移した）。内部テスト`engine/triage_test.go`
+- Storeのキー追加: `concern/<occ>/<nnn>`（ゲストの報告）、`triage-gate/<occ>/<nnn>`（開いたゲートと割り込んだ出現`Interrupted`）、`triage/<occ>/<nnn>`（Decision）、`answer/<occ>/<nnn>`（role付きquestionの`ask_human`の答え1件ずつ）。resultに`ApprovedCommit`を追加
+- triageの流れ: `walk`は毎回、`step`の前に`m.triage()`で最初の未決の懸念を見る。ゲート未作成→葉の出現を`Interrupted`に記録して`OpenGate`、未決→`StatusGate`、halt→`block`（理由に懸念の本文とコメント）。dismiss/redoは`records.reenter[Interrupted]`になり、`step`がその出現を「最後の出現」として見たときに同じノードへ再進入する（redoはコメント、無ければ懸念の本文をfeedbackに。dismissは元のfeedbackのまま）。`Status.Occurrence`と`GateRequest.Occurrence`は懸念を報告した出現。`TargetHash`は懸念本文のハッシュ（dismiss/halt/redoでは照合しない）
+- 葉の決め方: rootから最後の出現をたどり、結果の無いworkflow/foreachノードは終わっていない子フレームへ下りる。ゲートが開いている間は`ReportResult`等が`waiting`で拒否されrunが動かないので、判断を適用する時点でも同じ出現になる
+- dismissは「割り込まれた出現にまだ結果が無いなら再進入、報告済みなら結果に従って進む」と解釈した。報告後・Advance前に懸念が来たとき、終わった作業をやり直させないため。redoは常に再進入
+- 進入回数: triageで割り込まれた出現は`records.triaged`経由で`decided`に含まれ、そこで数え直す（「回数に数えない」より強いが、契約の「人間の判断で数え直す」と同じ扱い）
+- 待っていない出現（過去の出現）からの懸念も記録してtriageする。存在しない出現・未開始のrunからは拒否。完了・停止済みのrunへの懸念は記録とログ（`concern`）だけ残り、`walk`が先にdone/blockedを返すのでゲートは開かない
+- ログ: `concern`（ReportConcern）、`gate-open`（Detail=triage）、`decision`と`triage`（Decideで両方。`triage`のOccurrenceは割り込まれた出現、Detailは処置と懸念本文）を足した。他のkindsはE3〜E5で出ている。`start`も出している（契約のkindsの一覧には無い）
+- role付きquestion: タスク中（`StatusAgent`でその出現を待っている）の`Engine.Answer`は検証せずに記録し、`answer`をログ。`ReportResult(done)`で後勝ちマージ→`answers`スキーマで検証→`outputs[0]`に`PutData`→結果は`answered`（resultのOutputsはエージェント自身の出力＋`outputs[0]`）。マージ結果が空・スキーマ不一致は無効な結果として差し戻す。done以外の宣言済みoutcomeはそのまま記録する（questionの行き先は`answered`だけなので、実際にはblockedになる）
+- publish: `target: diff`のapprovalが`approved`になった時点の`records.lastCommit()`のハッシュを`result.ApprovedCommit`に記録。publishはrun全体で最後の「diffの承認」を探し、それが無い/コミットが空なら「差分のレビューで承認されたコミットが無い」、その後にcommitの出現があれば「承認後にコミットが進んだ」でblocked
+- Decideの誤ったoutcome（承認ゲートにdismiss等、triageにapproved等）は`ErrNotImplemented`ではなく通常のエラーになった
 
-E6へ引き継ぐ未決事項:
-1. triageの判断を`decided`に足す方法（triageゲートを出現にどう紐付けるか。deviationと同じく`<occ>/<n>`キーで持つと`decided`をそのまま使える）
-2. role付きquestionの実装をどの作業項目で行うか（上の「未完と理由」）
-3. publishの`Commit`をreviewゲート承認時点のコミットに結びつけるか（現状は直近のコミット）
+E7へ引き継ぐ未決事項:
+1. 同梱`develop`にtriageの到達先は書かない（エンジンの割り込みなので）。`Mermaid`は既に描き込んでいる
+2. C-E7は`StatusQuestion`に空の答えを返す。同梱`develop`に固定questionを置くなら、空の答えが`Answer`の検証（全質問に答えが必要）で拒否される点に注意。role付きquestionなら`StatusAgent`として`done`が報告されるが、答えが無いので差し戻され続け、最後はexhausted/無限ループになりうる（question nodeは既定でmax無制限）。C-E7を通すなら`develop`にquestionを経路上で置かないか、置き方を工夫する
+3. C-E7の`publish`は承認済みコミットを要する。`develop`はcommitの後に`target: diff`の承認を置き、その後にcommitを挟まずpublishする形でなければblockedになる
+4. 書き込めないエージェントの計画外変更でdeviationゲートが待っている間にredoすると、再進入した出現の`BaseHash`に変更が含まれ、同じ変更は二度と検出されない（既知の制限）
 ## 契約への提案
 なし
