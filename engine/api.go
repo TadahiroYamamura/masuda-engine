@@ -510,7 +510,7 @@ func (e *Engine) Decide(ctx context.Context, run RunID, occurrence string, d Dec
 
 // Answer records a human's answers to the question opened by occurrence.
 func (e *Engine) Answer(ctx context.Context, run RunID, occurrence string, a Answer) error {
-	return ErrNotImplemented
+	return e.answer(ctx, run, occurrence, a)
 }
 
 // ReportConcern records a security concern raised by the guest. The next
@@ -521,5 +521,5 @@ func (e *Engine) ReportConcern(ctx context.Context, run RunID, occurrence, text 
 
 // Status returns the current status without moving the run.
 func (e *Engine) Status(ctx context.Context, run RunID) (Status, error) {
-	return e.walk(ctx, run, false)
+	return e.status(ctx, run)
 }

@@ -61,7 +61,7 @@ func (s *kvStore) Apply(ops []Op) (bool, error) {
 	return true, nil
 }
 
-// fakeRunner implements only what E3 uses; the embedded nil interface makes
+// fakeRunner implements only what E3/E4 use; the embedded nil interface makes
 // any other call panic, which is what a test of E3 wants to notice.
 type fakeRunner struct {
 	Runner
@@ -85,6 +85,9 @@ func (r *fakeRunner) GetData(_ context.Context, _ RunID, ref DataRef) ([]byte, e
 		return v, nil
 	}
 	return nil, errors.New("no data")
+}
+func (r *fakeRunner) Snapshot(_ context.Context, _ RunID, occ string) (SnapshotRef, error) {
+	return SnapshotRef("snap-" + occ), nil
 }
 func (r *fakeRunner) OpenGate(context.Context, GateRequest) error { r.gates++; return nil }
 func (r *fakeRunner) Log(e Event)                                 { r.events = append(r.events, e) }
@@ -115,7 +118,7 @@ func TestRunCallPassesFeedbackAndEndsThroughFrames(t *testing.T) {
 	if err := e.Start(ctx, "r", "workflows/x", []string{"instructions"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := e.Status(ctx, "r"); !errors.Is(err, errPending) {
+	if st, err := e.Status(ctx, "r"); err != nil || st.Kind != StatusPending {
 		t.Fatalf("Status before the first Advance: %v", err)
 	}
 	s, err := e.Advance(ctx, "r")

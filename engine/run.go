@@ -154,6 +154,13 @@ func (m *mover) step(frameID string) (Status, bool, error) {
 	switch n.Type {
 	case NodeAgent:
 		return Status{Kind: StatusAgent, Occurrence: cur.ID, Task: m.e.task(m.run, cur, n)}, false, nil
+	case NodeExec:
+		return m.exec(&fr, cur, n)
+	case NodeQuestion:
+		if n.Role != "" {
+			return Status{Kind: StatusAgent, Occurrence: cur.ID, Task: m.e.task(m.run, cur, n)}, false, nil
+		}
+		return m.question(cur, n)
 	case NodeApproval:
 		return m.approval(&fr, cur, n)
 	case NodeWorkflow:
@@ -197,7 +204,7 @@ func (m *mover) enter(fr *frame, w *Workflow, id, feedback string) (Status, bool
 		}
 		occ.Exhausted = count >= max
 	}
-	if n.Type == NodeAgent && !occ.Exhausted {
+	if n.Role != "" && !occ.Exhausted {
 		if err := m.prepareAgent(fr, n, occ); err != nil {
 			return Status{}, false, err
 		}
@@ -235,19 +242,57 @@ func (m *mover) prepareAgent(fr *frame, n *Node, occ *occurrence) error {
 		}
 		occ.Inputs[name] = ref
 	}
-	for _, name := range slices.Concat(n.Outputs, a.Outputs) {
+	// A question node's output holds the human's answers, which the engine
+	// stores from Answer; the agent only asks.
+	nodeOutputs := n.Outputs
+	if n.Type == NodeQuestion {
+		nodeOutputs = nil
+	}
+	for _, name := range slices.Concat(nodeOutputs, a.Outputs) {
 		if !slices.Contains(occ.Outputs, name) {
 			occ.Outputs = append(occ.Outputs, name)
 		}
 	}
 	p := Policy{Egress: n.Egress, Secrets: n.Secrets}
 	occ.Policy = &p
+	return m.setPolicy(occ, p)
+}
+
+func (m *mover) setPolicy(occ *occurrence, p Policy) error {
 	if err := m.e.runner.SetPolicy(m.ctx, m.run, p); err != nil {
 		return err
 	}
-	m.e.log(m.run, Event{Kind: "policy", Occurrence: occ.ID, Workflow: occ.Workflow, Node: n.ID,
+	m.e.log(m.run, Event{Kind: "policy", Occurrence: occ.ID, Workflow: occ.Workflow, Node: occ.Node,
 		Detail: fmt.Sprintf("egress=%v secrets=%v", p.Egress, p.Secrets)})
 	return nil
+}
+
+// snapshot records the worktree at the end of an agent or exec occurrence,
+// so later diffs and deviation checks can start from that boundary.
+func (e *Engine) snapshot(ctx context.Context, run RunID, o *occurrence) (SnapshotRef, error) {
+	ref, err := e.runner.Snapshot(ctx, run, o.ID)
+	if err != nil {
+		return "", err
+	}
+	e.log(run, Event{Kind: "snapshot", Occurrence: o.ID, Workflow: o.Workflow, Node: o.Node, Detail: string(ref)})
+	return ref, nil
+}
+
+func (e *Engine) nodeOf(o *occurrence) (*Node, error) {
+	if w := e.set.Workflows[o.Workflow]; w != nil {
+		if n := w.Nodes[o.Node]; n != nil {
+			return n, nil
+		}
+	}
+	return nil, fmt.Errorf("engine: %s has no node %s", o.Workflow, o.Node)
+}
+
+func (e *Engine) status(ctx context.Context, run RunID) (Status, error) {
+	st, err := e.walk(ctx, run, false)
+	if errors.Is(err, errPending) {
+		return Status{Kind: StatusPending}, nil
+	}
+	return st, err
 }
 
 // resolve finds the value of data name as seen from fr: the frame's bound
@@ -451,6 +496,15 @@ func (e *Engine) reportResult(ctx context.Context, run RunID, occ, outcome, feed
 	if err != nil {
 		return err
 	}
+	n, err := e.nodeOf(o)
+	if err != nil {
+		return err
+	}
+	if n.Type == NodeQuestion {
+		// The ask_human path (Answer during the task, then this report) is
+		// not settled yet; see HANDOFF.md.
+		return fmt.Errorf("engine: question node %s with a role: %w", n.ID, ErrNotImplemented)
+	}
 	a := st.Task.Agent
 	if _, ok := a.Outcomes[outcome]; !ok {
 		e.log(run, Event{Kind: "invalid", Occurrence: occ, Workflow: o.Workflow, Node: o.Node, Outcome: outcome, Detail: "undeclared outcome"})
@@ -478,7 +532,11 @@ func (e *Engine) reportResult(ctx context.Context, run RunID, occ, outcome, feed
 		if len(reasons) > 0 {
 			detail := strings.Join(reasons, "; ")
 			e.log(run, Event{Kind: "invalid", Occurrence: occ, Workflow: o.Workflow, Node: o.Node, Outcome: outcome, Detail: detail})
-			return e.record(run, o, result{Outcome: outcome, Invalid: true, Feedback: "前回の報告は受け付けられなかった: " + detail})
+			snap, err := e.snapshot(ctx, run, o)
+			if err != nil {
+				return err
+			}
+			return e.record(run, o, result{Outcome: outcome, Invalid: true, Feedback: "前回の報告は受け付けられなかった: " + detail, Snapshot: snap})
 		}
 		for _, name := range o.Outputs {
 			if err := e.runner.PutData(ctx, run, DataRef{Name: name, Occurrence: occ}, got[name]); err != nil {
@@ -486,6 +544,9 @@ func (e *Engine) reportResult(ctx context.Context, run RunID, occ, outcome, feed
 			}
 		}
 		res.Outputs = o.Outputs
+	}
+	if res.Snapshot, err = e.snapshot(ctx, run, o); err != nil {
+		return err
 	}
 	return e.record(run, o, res)
 }

@@ -20,7 +20,7 @@ import (
 //	                  whose fid is the calling occurrence's id)
 //	frame-end/<fid>   the outcome the frame finished with
 //	gate/<occ>        the gate request an approval occurrence opened
-//	question/<occ>    (E4) the question an occurrence opened
+//	question/<occ>    the question request a question occurrence opened
 //	concern/<occ>     (E6) a concern reported during an occurrence
 //	blocked           why the run stopped
 const (
@@ -31,6 +31,7 @@ const (
 	prefFrame    = "frame/"
 	prefFrameEnd = "frame-end/"
 	prefGate     = "gate/"
+	prefQuestion = "question/"
 	rootFrame    = "root"
 	// Seven digits keep lexical and numeric order equal well past Fuse.
 	idWidth = 7
@@ -65,6 +66,8 @@ type result struct {
 	Invalid bool `json:"invalid,omitempty"`
 	// Outputs are the data names accepted from this occurrence.
 	Outputs []string `json:"outputs,omitempty"`
+	// Snapshot is the worktree as an agent or exec occurrence left it.
+	Snapshot SnapshotRef `json:"snapshot,omitempty"`
 }
 
 type frame struct {
