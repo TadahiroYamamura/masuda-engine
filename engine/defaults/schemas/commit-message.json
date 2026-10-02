@@ -1,0 +1,7 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "commit-message",
+  "description": "Plain text, not JSON: the content is validated as one JSON string.",
+  "type": "string",
+  "pattern": "\\S"
+}

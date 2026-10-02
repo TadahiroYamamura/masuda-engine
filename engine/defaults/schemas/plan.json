@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "plan",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["summary", "steps"],
+  "properties": {
+    "summary": {"type": "string", "pattern": "\\S"},
+    "steps": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["number", "description", "files"],
+        "properties": {
+          "number": {"type": "integer", "minimum": 1},
+          "description": {"type": "string", "pattern": "\\S"},
+          "files": {
+            "type": "array",
+            "minItems": 1,
+            "items": {"$ref": "#/$defs/relpath"}
+          }
+        }
+      }
+    },
+    "expected_byproducts": {
+      "type": "array",
+      "items": {"type": "string", "pattern": "\\S"}
+    }
+  },
+  "$defs": {
+    "relpath": {
+      "description": "Clean path relative to the repository root: no leading slash, no empty, '.' or '..' segments, no trailing slash.",
+      "type": "string",
+      "pattern": "^(?:[^/.][^/]*|\\.[^/.][^/]*|\\.\\.[^/]+)(?:/(?:[^/.][^/]*|\\.[^/.][^/]*|\\.\\.[^/]+))*$"
+    }
+  }
+}

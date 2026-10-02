@@ -1,0 +1,14 @@
+version: 1
+inputs: [instructions]
+start: echo
+nodes:
+  echo:
+    type: agent
+    role: agents/echo
+    inputs: [instructions]
+    outputs: [echo]
+    next: finish
+  finish:
+    type: discard
+    export: [echo]
+    next: end

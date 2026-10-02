@@ -149,7 +149,17 @@ type Agent struct {
 // WriteCapable reports whether the agent can change the worktree: it has
 // Write or Edit, or declares no tools at all. Decided from Tools, never from
 // the definition's own claims.
-func (a *Agent) WriteCapable() bool { panic(ErrNotImplemented) }
+func (a *Agent) WriteCapable() bool {
+	if a.Tools == nil {
+		return true
+	}
+	for _, t := range a.Tools {
+		if t == "Write" || t == "Edit" {
+			return true
+		}
+	}
+	return false
+}
 
 // Origin says where a definition file came from.
 type Origin string
@@ -171,10 +181,10 @@ type Set struct {
 // directory (may be nil); bundled is the engine's own defaults. A file at the
 // same path in repo replaces the bundled one whole. Each file's shape is
 // checked here; rules spanning files are checked by Set.Check.
-func Load(repo fs.FS, bundled fs.FS) (*Set, error) { return nil, ErrNotImplemented }
+func Load(repo fs.FS, bundled fs.FS) (*Set, error) { return load(repo, bundled) }
 
 // Bundled returns the definitions embedded in this module.
-func Bundled() fs.FS { panic(ErrNotImplemented) }
+func Bundled() fs.FS { return bundledFS() }
 
 // Problem is one thing wrong with a definition set.
 type Problem struct {

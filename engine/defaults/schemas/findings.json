@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "findings",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["file", "line", "severity", "autofix", "message"],
+    "properties": {
+      "file": {
+        "type": "string",
+        "pattern": "^(?:[^/.][^/]*|\\.[^/.][^/]*|\\.\\.[^/]+)(?:/(?:[^/.][^/]*|\\.[^/.][^/]*|\\.\\.[^/]+))*$"
+      },
+      "line": {"type": "integer", "minimum": 1},
+      "end_line": {"type": "integer", "minimum": 1},
+      "severity": {"enum": ["高", "中", "低"]},
+      "autofix": {"type": "boolean"},
+      "message": {"type": "string", "pattern": "\\S"},
+      "suggestion": {"type": "string"}
+    }
+  }
+}
