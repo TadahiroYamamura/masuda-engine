@@ -61,7 +61,8 @@ func (s *kvStore) Apply(ops []Op) (bool, error) {
 	return true, nil
 }
 
-// fakeRunner implements only what E3/E4 use; the embedded nil interface makes
+// fakeRunner implements only what E3/E4 use (and ChangedSince, which every
+// agent that cannot write now calls); the embedded nil interface makes
 // any other call panic, which is what a test of E3 wants to notice.
 type fakeRunner struct {
 	Runner
@@ -88,6 +89,9 @@ func (r *fakeRunner) GetData(_ context.Context, _ RunID, ref DataRef) ([]byte, e
 }
 func (r *fakeRunner) Snapshot(_ context.Context, _ RunID, occ string) (SnapshotRef, error) {
 	return SnapshotRef("snap-" + occ), nil
+}
+func (r *fakeRunner) ChangedSince(context.Context, RunID, SnapshotRef) ([]string, string, error) {
+	return nil, "", nil
 }
 func (r *fakeRunner) OpenGate(context.Context, GateRequest) error { r.gates++; return nil }
 func (r *fakeRunner) Log(e Event)                                 { r.events = append(r.events, e) }

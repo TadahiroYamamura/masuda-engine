@@ -16,11 +16,14 @@ import (
 //	start             the root workflow and the run's inputs
 //	occ/<id>          one node entry (id: zero-padded serial)
 //	result/<id>       how that entry finished
-//	frame/<fid>       one running workflow file (root, or a called workflow
-//	                  whose fid is the calling occurrence's id)
+//	frame/<fid>       one running workflow file (root, a called workflow
+//	                  whose fid is the calling occurrence's id, or one
+//	                  foreach iteration, fid "<occ>.<n>")
 //	frame-end/<fid>   the outcome the frame finished with
 //	gate/<occ>        the gate request an approval occurrence opened
 //	question/<occ>    the question request a question occurrence opened
+//	deviation/<occ>/<n>  the n-th deviation gate an occurrence opened
+//	decision/<occ>/<n>   the human's decision on that gate
 //	concern/<occ>     (E6) a concern reported during an occurrence
 //	blocked           why the run stopped
 const (
@@ -32,6 +35,8 @@ const (
 	prefFrameEnd = "frame-end/"
 	prefGate     = "gate/"
 	prefQuestion = "question/"
+	prefDevGate  = "deviation/"
+	prefDevDec   = "decision/"
 	rootFrame    = "root"
 	// Seven digits keep lexical and numeric order equal well past Fuse.
 	idWidth = 7
@@ -56,6 +61,14 @@ type occurrence struct {
 	Inputs  map[string]DataRef `json:"inputs,omitempty"`
 	Outputs []string           `json:"outputs,omitempty"`
 	Policy  *Policy            `json:"policy,omitempty"`
+	// Base is the snapshot the worktree is compared against: for agent and
+	// exec, where the node started; for commit, where the work being
+	// committed started. BaseHash is ChangedSince(Base) at entry, kept for
+	// agents that cannot write.
+	Base     SnapshotRef `json:"base,omitempty"`
+	BaseHash string      `json:"base_hash,omitempty"`
+	// Items are what a foreach iterates over, fixed at entry.
+	Items []Item `json:"items,omitempty"`
 }
 
 type result struct {
@@ -68,6 +81,20 @@ type result struct {
 	Outputs []string `json:"outputs,omitempty"`
 	// Snapshot is the worktree as an agent or exec occurrence left it.
 	Snapshot SnapshotRef `json:"snapshot,omitempty"`
+	// Deviation lists what an agent that cannot write changed; the run
+	// waits on a deviation gate before following the outcome.
+	Deviation     []string `json:"deviation,omitempty"`
+	DeviationHash string   `json:"deviation_hash,omitempty"`
+	// Commit is the hash a commit occurrence made.
+	Commit string `json:"commit,omitempty"`
+}
+
+// devGate is one deviation gate and, once decided, its decision.
+type devGate struct {
+	N        int         `json:"n"`
+	Request  GateRequest `json:"request"`
+	Files    []string    `json:"files"`
+	Decision *Decision   `json:"-"`
 }
 
 type frame struct {
@@ -78,6 +105,15 @@ type frame struct {
 	// node gets it, since the calling node is not an agent that could read
 	// it.
 	Feedback string `json:"feedback,omitempty"`
+	// Parent is the frame this one was called from ("" for root).
+	Parent string `json:"parent,omitempty"`
+	// A foreach iteration remembers what it iterates and which item it is.
+	Over    string  `json:"over,omitempty"`
+	Item    string  `json:"item,omitempty"`
+	ItemRef DataRef `json:"item_ref,omitempty"`
+	// Tree is the worktree when a findings iteration began (fix-diff's
+	// starting point).
+	Tree SnapshotRef `json:"tree,omitempty"`
 }
 
 // records is every occurrence and result of a run, loaded once per move.
@@ -88,12 +124,14 @@ type records struct {
 	// latest is, per data name, the occurrence that last wrote it.
 	latest map[string]string
 	maxID  int
+	// devs are the deviation gates per opening occurrence, in order.
+	devs map[string][]*devGate
 }
 
 func runKey(run RunID, k string) string { return string(run) + "/" + k }
 
 func (e *Engine) loadRecords(run RunID) (*records, error) {
-	r := &records{byFrame: map[string][]*occurrence{}, results: map[string]*result{}, latest: map[string]string{}}
+	r := &records{byFrame: map[string][]*occurrence{}, results: map[string]*result{}, latest: map[string]string{}, devs: map[string][]*devGate{}}
 	kvs, err := e.store.List(runKey(run, prefOcc))
 	if err != nil {
 		return nil, err
@@ -130,7 +168,63 @@ func (e *Engine) loadRecords(run RunID) (*records, error) {
 			}
 		}
 	}
+	if err := e.loadDeviations(run, r); err != nil {
+		return nil, err
+	}
 	return r, nil
+}
+
+func (e *Engine) loadDeviations(run RunID, r *records) error {
+	kvs, err := e.store.List(runKey(run, prefDevGate))
+	if err != nil {
+		return err
+	}
+	byKey := map[string]*devGate{}
+	for _, kv := range kvs {
+		var g devGate
+		if err := json.Unmarshal(kv.Value, &g); err != nil {
+			return fmt.Errorf("%s: %w", kv.Key, err)
+		}
+		occ := g.Request.Occurrence
+		r.devs[occ] = append(r.devs[occ], &g)
+		byKey[devKey(occ, g.N)] = &g
+	}
+	for _, gs := range r.devs {
+		sort.Slice(gs, func(i, j int) bool { return gs[i].N < gs[j].N })
+	}
+	kvs, err = e.store.List(runKey(run, prefDevDec))
+	if err != nil {
+		return err
+	}
+	for _, kv := range kvs {
+		k := kv.Key[len(runKey(run, prefDevDec)):]
+		g := byKey[k]
+		if g == nil {
+			continue
+		}
+		var d Decision
+		if err := json.Unmarshal(kv.Value, &d); err != nil {
+			return fmt.Errorf("%s: %w", kv.Key, err)
+		}
+		g.Decision = &d
+	}
+	return nil
+}
+
+func devKey(occ string, n int) string { return fmt.Sprintf("%s/%03d", occ, n) }
+
+// decided reports whether a human decided anything on occurrence o: an
+// approval node's result, or a deviation gate it opened.
+func (r *records) decided(o *occurrence, n *Node) bool {
+	if n != nil && n.Type == NodeApproval && r.results[o.ID] != nil {
+		return true
+	}
+	for _, g := range r.devs[o.ID] {
+		if g.Decision != nil {
+			return true
+		}
+	}
+	return false
 }
 
 func (r *records) last(frameID string) *occurrence {

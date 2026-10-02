@@ -146,6 +146,12 @@ func (m *mover) step(frameID string) (Status, bool, error) {
 		return Status{}, false, fmt.Errorf("engine: %s has no node %s", w.Path, cur.Node)
 	}
 	if res := m.recs.results[cur.ID]; res != nil {
+		if len(res.Deviation) > 0 {
+			st, wait, moved, err := m.readOnlyDeviation(cur, res)
+			if err != nil || wait || moved {
+				return st, moved, err
+			}
+		}
 		return m.transition(&fr, w, cur, n, res)
 	}
 	if cur.Exhausted {
@@ -165,6 +171,12 @@ func (m *mover) step(frameID string) (Status, bool, error) {
 		return m.approval(&fr, cur, n)
 	case NodeWorkflow:
 		return m.call(&fr, cur, n)
+	case NodeForeach:
+		return m.foreach(&fr, cur, n)
+	case NodeCommit:
+		return m.commit(&fr, cur, n)
+	case NodePublish:
+		return m.publish(cur, n)
 	case NodeDiscard:
 		if err := m.need(); err != nil {
 			return Status{}, false, err
@@ -178,8 +190,9 @@ func (m *mover) step(frameID string) (Status, bool, error) {
 }
 
 // enter records an entry into node id, or an exhausted entry when the node's
-// max is reached. Entries are counted since the frame's last decided
-// approval: a human looking at the work restarts the budget.
+// max is reached. Entries are counted since the frame's last human decision
+// (an approval, or a deviation gate): a human looking at the work restarts
+// the budget.
 func (m *mover) enter(fr *frame, w *Workflow, id, feedback string) (Status, bool, error) {
 	if err := m.need(); err != nil {
 		return Status{}, false, err
@@ -198,7 +211,7 @@ func (m *mover) enter(fr *frame, w *Workflow, id, feedback string) (Status, bool
 			if o.Node == id && !o.Exhausted {
 				count++
 			}
-			if w.Nodes[o.Node] != nil && w.Nodes[o.Node].Type == NodeApproval && m.recs.results[o.ID] != nil {
+			if m.recs.decided(o, w.Nodes[o.Node]) {
 				count = 0
 			}
 		}
@@ -207,6 +220,16 @@ func (m *mover) enter(fr *frame, w *Workflow, id, feedback string) (Status, bool
 	if n.Role != "" && !occ.Exhausted {
 		if err := m.prepareAgent(fr, n, occ); err != nil {
 			return Status{}, false, err
+		}
+	}
+	if !occ.Exhausted {
+		if err := m.prepareBase(fr, n, occ); err != nil {
+			return Status{}, false, err
+		}
+		if n.Type == NodeForeach {
+			if err := m.prepareItems(fr, n, occ); err != nil {
+				return Status{}, false, err
+			}
 		}
 	}
 	applied, err := m.e.create(m.run, prefOcc+occ.ID, occ)
@@ -313,7 +336,15 @@ func (m *mover) resolve(fr *frame, name, occ string) (DataRef, error) {
 		}
 		return ref, nil
 	case string(DiffFromRef):
-		return DataRef{}, fmt.Errorf("data %q: %w", name, ErrNotImplemented)
+		tree, err := m.iterationTree(fr)
+		if err != nil {
+			return DataRef{}, err
+		}
+		ref := DataRef{Name: name, Occurrence: occ}
+		if err := m.e.runner.Diff(m.ctx, m.run, DiffFromRef, tree, ref); err != nil {
+			return DataRef{}, err
+		}
+		return ref, nil
 	}
 	if slices.Contains(m.start.Inputs, name) {
 		return DataRef{Name: name}, nil
@@ -418,20 +449,32 @@ func (m *mover) call(fr *frame, cur *occurrence, n *Node) (Status, bool, error) 
 	if callee == nil {
 		return Status{}, false, fmt.Errorf("engine: workflow %s is not loaded", n.Workflow)
 	}
-	cf := frame{ID: child, Workflow: callee.Path, Inputs: map[string]DataRef{}, Feedback: cur.Feedback}
+	cf := frame{ID: child, Workflow: callee.Path, Inputs: map[string]DataRef{}, Feedback: cur.Feedback, Parent: fr.ID}
+	if err := m.bindInputs(fr, n, callee, cur.ID, &cf, ""); err != nil {
+		return Status{}, false, err
+	}
+	_, err := m.e.create(m.run, prefFrame+child, cf)
+	return Status{}, true, err
+}
+
+// bindInputs binds callee's inputs in cf from fr, through n's `with`. The
+// input named skip is already bound (a foreach item).
+func (m *mover) bindInputs(fr *frame, n *Node, callee *Workflow, occ string, cf *frame, skip string) error {
 	for _, in := range callee.Inputs {
+		if in == skip {
+			continue
+		}
 		name := in
 		if b, ok := n.With[in]; ok {
 			name = b
 		}
-		ref, err := m.resolve(fr, name, cur.ID)
+		ref, err := m.resolve(fr, name, occ)
 		if err != nil {
-			return Status{}, false, fmt.Errorf("%s: node %s: input %q: %w", fr.Workflow, n.ID, in, err)
+			return fmt.Errorf("%s: node %s: input %q: %w", fr.Workflow, n.ID, in, err)
 		}
 		cf.Inputs[in] = ref
 	}
-	_, err := m.e.create(m.run, prefFrame+child, cf)
-	return Status{}, true, err
+	return nil
 }
 
 // approval opens the gate once and then waits. The request is stored before
@@ -532,11 +575,11 @@ func (e *Engine) reportResult(ctx context.Context, run RunID, occ, outcome, feed
 		if len(reasons) > 0 {
 			detail := strings.Join(reasons, "; ")
 			e.log(run, Event{Kind: "invalid", Occurrence: occ, Workflow: o.Workflow, Node: o.Node, Outcome: outcome, Detail: detail})
-			snap, err := e.snapshot(ctx, run, o)
-			if err != nil {
+			res := result{Outcome: outcome, Invalid: true, Feedback: "前回の報告は受け付けられなかった: " + detail}
+			if err := e.finishAgent(ctx, run, o, a, &res); err != nil {
 				return err
 			}
-			return e.record(run, o, result{Outcome: outcome, Invalid: true, Feedback: "前回の報告は受け付けられなかった: " + detail, Snapshot: snap})
+			return e.record(run, o, res)
 		}
 		for _, name := range o.Outputs {
 			if err := e.runner.PutData(ctx, run, DataRef{Name: name, Occurrence: occ}, got[name]); err != nil {
@@ -545,16 +588,36 @@ func (e *Engine) reportResult(ctx context.Context, run RunID, occ, outcome, feed
 		}
 		res.Outputs = o.Outputs
 	}
-	if res.Snapshot, err = e.snapshot(ctx, run, o); err != nil {
+	if err := e.finishAgent(ctx, run, o, a, &res); err != nil {
 		return err
 	}
 	return e.record(run, o, res)
+}
+
+// finishAgent takes the end-of-occurrence snapshot and, for an agent that
+// cannot write, compares the worktree with how it was at entry.
+func (e *Engine) finishAgent(ctx context.Context, run RunID, o *occurrence, a *Agent, res *result) error {
+	if !a.WriteCapable() {
+		files, hash, err := e.runner.ChangedSince(ctx, run, o.Base)
+		if err != nil {
+			return err
+		}
+		if hash != o.BaseHash && len(files) > 0 {
+			res.Deviation, res.DeviationHash = files, hash
+		}
+	}
+	snap, err := e.snapshot(ctx, run, o)
+	res.Snapshot = snap
+	return err
 }
 
 func (e *Engine) decide(ctx context.Context, run RunID, occ string, d Decision) error {
 	st, o, err := e.waiting(ctx, run, occ, StatusGate)
 	if err != nil {
 		return err
+	}
+	if st.Gate.Gate == GateDeviation {
+		return e.decideDeviation(run, o, st.Gate, d)
 	}
 	switch d.Outcome {
 	case OutcomeApproved:
