@@ -1,24 +1,26 @@
 # HANDOFF
 ## 作業項目
-E3（エンジンの中核）完了。`New`・`Start`・`Advance`（agent・approval・workflow・discard・end）・`Status`・`ReportResult`・`Decide`
+E4（exec・question・方針・スナップショット）完了。E3までの`New`・`Start`・`Advance`・`Status`・`ReportResult`・`Decide`に加え、execノード・固定questionsのquestionノード・`Answer`・ノード境界のスナップショット・`StatusPending`
 ## 完了した契約テスト
-C-E1・C-E2・C-E3（`go test -count=1 ./contract/ -run 'TestCE1|TestCE2|TestCE3'` 緑、`go vet ./...` 指摘なし）。C-E4〜C-E7は想定どおり失敗する（exec・foreachなどに入ると`ErrNotImplemented`を返す。`Answer`・`ReportConcern`も`ErrNotImplemented`のまま。C-E7は同梱の`workflows/develop`が無いため）
+C-E1・C-E2・C-E3・C-E4（`go test -count=1 ./contract/ -run 'TestCE1|TestCE2|TestCE3|TestCE4'` 緑、`go vet ./...` 指摘なし）。C-E5〜C-E7は想定どおり失敗する（foreach・deviation・`ReportConcern`が`ErrNotImplemented`、C-E7は同梱の`workflows/develop`が無いため）
 ## 未完と理由
-なし（E3の範囲内）。E4以降は範囲外のため未着手
+- role付きquestionは「エージェントタスクを出す」まで（E4の指示どおり）。そのoccurrenceへの`ReportResult`は`ErrNotImplemented`、タスク実行中の`Answer`は「questionを待っていない」エラーになる。下の未決事項を決めてから実装する
 ## 次の一手
-E4（exec・question・方針・スナップショット）。`docs/work-orders.md`のE4を読む
+E5（foreach・commit・publish・discard・逸脱）。`docs/work-orders.md`のE5を読む
 ## 注意点
-- 実装の場所: `engine/records.go`（Storeのキーと記録の型、読み込み）、`engine/run.go`（歩行・進入・遷移・各ノード・ReportResult/Decide）、`engine/validate.go`（出力のスキーマ検証）。`api.go`は関数本体だけ書き換えた。内部テスト`engine/run_test.go`（workflowノード越しの差し戻し・ゲートが1回だけ開くこと・Statusの振る舞い）
-- Storeのキー（すべて`<run>/`の下）: `start`（root・入力名）、`occ/<id>`（7桁ゼロ詰め、既存の最大+1）、`result/<id>`、`frame/<fid>`（rootは`root`、呼び出し先は呼び出し元の出現ID）、`frame-end/<fid>`（outcome文字列）、`gate/<occ>`（開いたGateRequest）、`blocked`（理由文字列）。`question/<occ>`・`concern/<occ>`は未使用（E4/E6で使う）。書き込みはすべて「キーが無いこと」をOpCheckするApplyで行い、負けたら読み直す
-- 位置の再計算: Advanceのたびに`blocked`→`frame-end/root`→occ/resultを全部読み、rootフレームの最後の出現から辿る。結果があれば遷移、`Exhausted`なら`exhausted`で終える、workflowノードなら子フレームへ降りる。`walk(mutate)`の1関数で、mutate=falseのときに書き込みが必要になると`errPending`を返す。`Status`・`ReportResult`・`Decide`はこの見るだけの歩行で「今待っている出現」を求めて照合する。よって**ReportResult/Decideの直後、Advance前のStatusはエラー**（`errPending`）
-- agentの`Inputs`（フレームの入力＋ノードの`inputs`＋エージェントの`inputs`）・`Outputs`（ノード＋エージェントの和）・`Policy`は進入時に出現へ固定する。SetPolicyは進入時に1回（exhaustedの進入では呼ばない）。execのSetPolicyはE4で実行直前に呼ぶこと
-- データの解決順（`mover.resolve`）: フレームの束縛済み入力 → run内で最後に受け付けた出力（resultの`Outputs`から出現ID順で求める）→ `diff`・`step-diff`は`Runner.Diff`でその出現の値として計算 → runの入力（Occurrence ""）。`fix-diff`は`ErrNotImplemented`（E5でforeach over findingsのスナップショットから計算する）
-- 進入回数: 同じフレームの出現を順に見て、そのノードの非exhausted出現を数え、判断済み（resultあり）のapprovalが出たら0に戻す。deviation・triageの判断で戻すかはE5/E6で決める（`enter`の中）
-- 差し戻し: resultの`Feedback`が次の出現の`Feedback`になる。次がworkflowなら子フレームの`Feedback`に入り、その最初のノードが受け取る。foreach（E5）も同じく子フレームの`Feedback`に入れること
-- approval: 開いたときにTargetHash（内容のsha256 hex）とSubject（内容そのもの）を`gate/<occ>`に保存し、OpenGateはその1回だけ。`target: diff`は`Runner.Diff(DiffFromBase)`をその出現の値として計算して使う。Decideは`approved`/`rejected`だけ受け付け、他（dismiss・halt・redo）は`ErrNotImplemented`（E5/E6）。承認のハッシュ不一致はエラーで、記録しない
-- ReportResult: 宣言外outcomeはエラー（記録せず、`invalid`イベントだけ出す）。`done`で出力の欠落・検証失敗は`Invalid`な結果として記録し、日本語の理由を差し戻しにして同じノードへ再進入（回数に数える）。受け付けた出力は`PutData(DataRef{name, occ})`。書き込めないエージェントのdeviation検査（C-E5の2つめ）はE5でここかagent待機中に挟むこと
-- イベント: start・enter・policy・finish・end・gate-open・decision・invalid・blocked
-- ヒューズ: 進入時に出現数が`Fuse`以上なら`blocked`
+- 実装の場所: `engine/exec.go`（execノード）、`engine/question.go`（固定question・`Answer`）、`engine/run.go`（歩行・進入・遷移・agent/approval/workflow/discard・ReportResult/Decide・`snapshot`/`setPolicy`/`nodeOf`/`status`ヘルパー）、`engine/records.go`（Storeのキーと記録の型）、`engine/validate.go`。内部テスト`engine/run_test.go`・`engine/exec_test.go`
+- Storeのキー（`<run>/`の下）: E3の`start`・`occ/<id>`・`result/<id>`・`frame/<fid>`・`frame-end/<fid>`・`gate/<occ>`・`blocked`に、`question/<occ>`（開いたQuestionRequest。OpenQuestionはこれを書けたときの1回だけ）を追加。`concern/<occ>`は未使用（E6）
+- スナップショット: agent/execの出現が終わるとき（agentは`ReportResult`で記録する直前、Invalidな報告も含む。execは結果記録の直前、failed・Invalidも含む）に`Runner.Snapshot(occ)`を呼び、`result.Snapshot`に残す（occレコードは進入時の不変記録なのでresult側に置いた）。exhaustedの出現・approval・question・workflow・discardでは取らない。E5の`fix-diff`・deviationの`ChangedSince(from)`は「直前の境界のスナップショット」をresultから引けばよい（例: agent進入時点の基準＝同じrunで直前に終わったagent/execのresult.Snapshot。run開始直後は空なので、そのときの基準をどうするかはE5で決める）
+- exec: Advanceの中で同期実行。順序は入力解決（フレーム入力＋ノードの`inputs`、`resolve`経由）→`SetPolicy`（実行直前に毎回）→`RunCommand`→判定→`Snapshot`→result記録。exit非0またはTimedOutは`failed`（差し戻し＝「コマンドが失敗した（exit N）:\n」＋LogTail）。exit 0で出力の欠落・検証失敗は`Invalid`な結果として同じノードへ再進入（回数に数える）。受け付けた出力は`PutData(DataRef{name, occ})`。結果は実行後にしか書かないので、途中で落ちると次のAdvanceで再実行され、並行Advanceでは二重実行し得る（記録は先着1件）
+- question（固定）: 初回の歩行で`question/<occ>`を作って`OpenQuestion`、以後は保存済みのリクエストで`StatusQuestion`を返す。`Answer`は全質問への回答・選択肢との一致・未質問idの不在を確かめ、`outputs[0]`のスキーマで検証してから`PutData(DataRef{outputs[0], occ})`（JSON、id→answer）し、`answered`で記録。不正な回答は記録せずエラー（答え直せる）
+- question（role付き）: 進入時に`prepareAgent`を通る（`n.Role != ""`で判定。SetPolicyも呼ぶ）。タスクの`Outputs`にはノードの`outputs`（答え）を含めずエージェントの`outputs`だけにした（答えはエンジンが`Answer`から保存する想定のため）
+- `Status`: 見るだけの歩行が書き込みを必要とした（`errPending`）とき`Status{Kind: StatusPending}`を返す。Start直後でAdvance前も同じくPending。`Occurrence`は空。`ReportResult`/`Decide`/`Answer`内部の`waiting`は従来どおり`walk(false)`を直接使う
+- イベント: E3の分に加え policy（execでも）・snapshot・question-open・answer
+- E3からの注意点（データ解決順・進入回数のリセット・差し戻しの受け渡し・approval・ヒューズ）は変わっていない。`fix-diff`は`resolve`で`ErrNotImplemented`のまま
+
+E5へ引き継ぐ未決事項:
+1. role付きquestionの完了の形: エージェントの`done`を`answered`に読み替えるか。実行中の`Answer`（ホストが`ask_human`を仲介し、質問idはエージェントが決める）を`question/<occ>`相当に蓄積して`ReportResult`時に`outputs[0]`へ保存するのか、エージェント自身が答えを出力として書くのか。`Answer`がStatusAgentの出現を受け付けるようにする必要がある
+2. スナップショットの基準: deviation検査（C-E5の2つめ）で`ChangedSince`に渡す「エージェント開始時点」をどこから取るか（直前の境界のresult.Snapshotか、進入時に別途Snapshotを取るか）。現在は終了時にしか取っていない
+3. 進入回数のリセットをdeviation・triageの判断でも行うか（E3から継続）
 ## 契約への提案
-ブロッキングではないもの:
-1. `Status`が「Advanceが必要な状態」（結果報告直後など）を表す手段が契約に無い。現在は非公開エラーを返している。ホストが区別したいなら`StatusKind`に`pending`のような値を足すか、公開エラー変数を足す案がある
+なし（E3の提案1はStatusPendingとして契約に入り、実装済み）
