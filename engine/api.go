@@ -443,6 +443,10 @@ const (
 	StatusQuestion StatusKind = "question" // waiting for a human answer
 	StatusDone     StatusKind = "done"     // root workflow finished
 	StatusBlocked  StatusKind = "blocked"  // stopped; see Reason
+	// StatusPending: a result, decision or answer has been recorded and the
+	// run has not been advanced since. Only Status returns it; Advance never
+	// does (it moves the run instead).
+	StatusPending StatusKind = "pending"
 )
 
 // Status is what the engine is waiting for after Advance.
