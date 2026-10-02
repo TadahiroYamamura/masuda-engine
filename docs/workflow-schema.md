@@ -73,7 +73,7 @@ nodes:
 | `publish` | — | `target`（`local`既定/`remote`）、`export` | `done` |
 | `discard` | — | `export` | `done` |
 
-- `approval.target`は`plan`、`diff`、または任意のデータ名。承認はその内容のハッシュに結びつく
+- `approval.target`は`plan`、`diff`、または任意のデータ名。承認はその内容のハッシュに結びつく。**`target: diff`の承認対象は、baseからブランチ先頭（コミット済み）までの差分**で、publishされる内容と一致する。作業ツリーに残る未コミットの変更（deviationで加えなかったもの等）は`Subject`に「publishされない変更」として一覧だけ添える。エージェントが読むデータ`diff`（base..作業ツリー）とは別物
 - `foreach.over`は次のどれか。各項目は`step`・`perspective`・またはデータ名の単数形（`findings`→`finding`）で`body`の入力になる
   - `steps`（承認済み計画のステップ）、`perspectives`（全観点）、`perspectives(from=<node>)`（そのノードが`selected-perspectives`に選んだ観点）: **Runnerが項目を返す**（`Runner.Items`）
   - `<データ名>[]`（JSON配列のデータ）: **エンジンが項目を作る**。配列の各要素が項目で、キーは要素の`id`フィールド（無ければ添字）。任意のフィルタ`<データ名>[<field>=<value>]`で要素を絞れる（例: `findings[autofix=true]`。値は`true`/`false`/数値/文字列の等価比較のみ）。累積データ（下記）では、以前の反復が`done`で終わった要素（同じキー）は飛ばす

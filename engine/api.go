@@ -271,6 +271,9 @@ const (
 	DiffFromBase DiffKind = "diff"      // base..worktree
 	DiffFromHead DiffKind = "step-diff" // HEAD..worktree
 	DiffFromRef  DiffKind = "fix-diff"  // a SnapshotRef..worktree
+	// DiffCommitted is base..branch head: exactly what publish will land.
+	// Approval nodes with target "diff" decide on this, not on the worktree.
+	DiffCommitted DiffKind = "committed-diff"
 )
 
 // GateRequest opens a human decision.

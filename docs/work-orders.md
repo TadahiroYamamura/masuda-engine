@@ -76,6 +76,13 @@
 - **観点の置き場所**（M8で実機確認）: trigger-matcherのプロンプトを、ゲストのcloneの`/workspace/.masuda/reviews/`ではなく**`/masuda/reviews/*.md`**（masudaが起動時に置くスナップショット）を読むように直す。reviewerへ渡る`perspective`の中身は従来どおり`Runner.Items`経由
 - 合わせて: ノードの`egress:`でポート付き（`host:port`）を`Load`で拒否する（`workflow-schema.md`に明記済み。masudaの`settings.json`がポートを許さないため、許すと常にBLOCKEDになる）
 
+## E10. ドキュメント整備で見つかった不備
+
+- **`target: diff`の承認対象**（契約を直した。`workflow-schema.md`のapproval.targetの行）: approvalノードの`target: diff`で開くゲートの`TargetHash`と`Subject`は、`Runner.Diff`の新しい種類で取る「baseからブランチ先頭まで」の差分にする。`api.go`の`DiffKind`に`DiffCommitted DiffKind = "committed-diff"`を**監督が足す**（この項目に着手する前に`git log -1 -p -- engine/api.go`で確認）。未コミットの変更は`Runner.ChangedSince(最後のcommit以後の基準)`で一覧を取り、`Subject`の末尾に「publishされない変更」として添える。承認後に新しいcommitがあれば`publish`を`blocked`にする規則（E6）はそのまま
+- **triageで中断されたゲートの後始末**: dismiss/redoで入り直したとき、中断された出現が開いていたゲートを「triageで無効」として閉じる（`decision`に記録、`gate-open`の対になるイベントを出す）。`Status`・ホストの一覧から消えること
+- **エージェントの`feedback`をログへ**: `finish`イベントの`detail`に`report_result`の`feedback`（先頭200文字）を含める
+- 契約テスト: C-E1〜C-E7が緑のまま。`contract/`に「`target: diff`のゲートの`Subject`が、未コミットの`notes.txt`を含むときにそれを『publishされない変更』として分けて載せる」ケースを**監督が足す**ので、着手時に確認
+
 ## 契約テストの対応表
 
 | テスト | 項目 |
