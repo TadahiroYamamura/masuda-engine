@@ -288,7 +288,11 @@ type Decision struct {
 	Outcome    string // approved | rejected | dismiss | halt | redo
 	Comment    string
 	TargetHash string // must match GateRequest.TargetHash for approvals
-	// Files approved as additions to the plan (deviation gate only).
+	// Files approved as additions to the plan (deviation gate only). Files
+	// the gate listed but this does not name are NOT added: the commit
+	// proceeds without them and they stay uncommitted in the worktree (the
+	// engine passes them as Byproducts for that commit). An empty list is
+	// therefore "approve the commit, add nothing", never "approve all".
 	ApprovedFiles []string
 }
 

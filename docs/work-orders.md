@@ -56,9 +56,17 @@
 ## E7. 同梱ワークフローとエージェントの移植
 
 - 旧`defaults/workflows/*`と`defaults/agents/*.md`を新しい語彙へ。工程型は`agent`/`exec`/`workflow`で表す。`develop`・`review`・`implement/build-step`・`review/perspectives`・`review/perspective-review`・`review/cross-cutting`・`fix-finding`と11エージェント
-- `check: test`は`exec`ノードに置き換える（コマンドは対象リポジトリの`settings.json`の`checks.test`をmasudaが`/masuda/in/<occ>/`に展開した`run-check`スクリプトとして渡す。エンジンから見るとただの`exec`）
+- `check: test`は`exec`ノードに置き換える（コマンドは`["/masuda/checks/test"]`。masudaが対象リポジトリの`settings.json`の`checks.test`をそのパスのスクリプトとして置く。エンジンから見るとただの`exec`）
 - `masuda workflow check`相当として、全同梱定義が`Check`に通ること
 - 契約テスト: C-E7（スタブで`develop`を歩いてpublishに到達）
+
+## E8. 契約の修正への追従（E7の仕上げ）
+
+- `Decision.ApprovedFiles`の意味を契約どおりに直す（空は「何も加えない」。ゲートに出したが承認されなかったファイルはそのcommitの`Byproducts`に回す。「空なら全部」の扱いをやめる）
+- **累積データ**（`workflow-schema.md`「累積データ」）: `x-masuda-accumulate`を持つスキーマのデータは書き込みを配列として集め（`id`で後勝ちの重複排除）、読み出しは連結、未書き込みは`[]`。`Set.Check`では常に用意済み。同梱`findings`のスキーマに`x-masuda-accumulate: true`と要素の`id`を加える
+- **データを回すforeach**（同「foreach.over」）: `<データ名>[]`と`<データ名>[field=value]`、`findings`は`findings[]`の省略形。エンジンが項目を作り、累積データでは以前`done`で終わった要素を飛ばす。`Runner.Items`は`steps`・`perspectives`系だけに呼ぶ
+- 同梱の`develop`・`review`・`build-step`を累積`findings`前提に見直し（`fix`は`findings[autofix=true]`を回す、synthesizerは累積の全件を読む）、C-E7を緑にする
+- 契約テスト: C-E1〜C-E7すべて
 
 ## 契約テストの対応表
 
@@ -70,4 +78,4 @@
 | C-E4 | E4 |
 | C-E5 | E5 |
 | C-E6 | E6 |
-| C-E7 | E7 |
+| C-E7 | E7・E8 |

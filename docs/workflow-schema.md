@@ -74,7 +74,10 @@ nodes:
 | `discard` | — | `export` | `done` |
 
 - `approval.target`は`plan`、`diff`、または任意のデータ名。承認はその内容のハッシュに結びつく
-- `foreach.over`は`steps`（承認済み計画のステップ）、`findings`（自動修正対象の指摘）、`perspectives`（全観点）、`perspectives(from=<node>)`（そのノードが`selected-perspectives`に選んだ観点）、または`<データ名>[]`（JSON配列のデータ）。各項目は`step`・`finding`・`perspective`・またはデータ名の単数形で`body`の入力になる
+- `foreach.over`は次のどれか。各項目は`step`・`perspective`・またはデータ名の単数形（`findings`→`finding`）で`body`の入力になる
+  - `steps`（承認済み計画のステップ）、`perspectives`（全観点）、`perspectives(from=<node>)`（そのノードが`selected-perspectives`に選んだ観点）: **Runnerが項目を返す**（`Runner.Items`）
+  - `<データ名>[]`（JSON配列のデータ）: **エンジンが項目を作る**。配列の各要素が項目で、キーは要素の`id`フィールド（無ければ添字）。任意のフィルタ`<データ名>[<field>=<value>]`で要素を絞れる（例: `findings[autofix=true]`。値は`true`/`false`/数値/文字列の等価比較のみ）。累積データ（下記）では、以前の反復が`done`で終わった要素（同じキー）は飛ばす
+  - `findings`は`findings[]`の省略形
 - `with`は呼び出し先の入力名にデータ名を結びつける。書かなければ同名のデータを渡す
 - `question.questions`は固定の質問。エンジンが`Runner.OpenQuestion`で開き、`Engine.Answer`で答えが来たら`outputs`の1つめのデータ名にJSON（id→answer）で保存して`answered`で遷移する
 - `question.role`を書くと、エージェントがタスクとして質問を組み立て、`ask_human`（ホストが`Engine.Answer`へ仲介する）で人間に聞く。1タスク中に複数回聞いてよく、エンジンは答えをその出現に溜める。エージェントが`done`で報告したとき、溜まった答え（id→answer、後勝ち）を`outputs`の1つめに保存し、ノードは`answered`で遷移する（`done`は`answered`に読み替える）。答えが1つも無いまま`done`なら無効な結果として差し戻す。エージェント定義の`outcomes`は`done`のみでよい
@@ -124,8 +127,17 @@ outcomes:
 
 ## データとスキーマ
 
+### 累積データ
+
+スキーマのトップレベルに`"x-masuda-accumulate": true`を持つデータは**累積データ**で、普通のデータ（最後に書かれた値だけが見える）と違い、runの中で書かれた値を1つの配列に集める。
+
+- 書き込みは配列でなければならず、要素は`id`フィールドがあればそれで重複を排除する（後勝ち）。無ければ常に追加
+- 読み出しは、その時点までに受け付けた全書き込みを連結した配列。1度も書かれていなければ`[]`。したがって累積データは**どの経路でも常に用意済み**として扱い、`Set.Check`のデータ可用性の解析で欠落にしない
+- 累積データを`inputs`に取るエージェント・execは、runのそれまでの全要素を受け取る（例: synthesizerは全観点と横断チェックの指摘をまとめて読む）
+- 同梱の`findings`は累積データ。旧設計の「指摘の台帳」に当たる
+
 - `schemas/<data>.json`があるデータは、受け取る境界でJSON Schema（draft 2020-12）で検証する
-- 同梱スキーマ: `plan`（summary、steps[]、expected_byproducts[]）、`findings`（file、line、severity、autofix、message…）、`commit-message`、`selected-perspectives`、`answers`
+- 同梱スキーマ: `plan`（summary、steps[]、expected_byproducts[]）、`findings`（累積。要素は`id`、file、line、severity、autofix、message…）、`commit-message`、`selected-perspectives`、`answers`
 - スキーマのトップレベルが`string`型なら、出力ファイルの内容そのものを1つの文字列として検証する（JSONとしてパースしない）。`commit-message`がこれに当たる
 - スキーマが無いデータは空でないことだけ確かめる
 - エンジンが用意するデータ: `diff`、`step-diff`、`fix-diff`（unified diff）
