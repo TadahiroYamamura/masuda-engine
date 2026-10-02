@@ -21,26 +21,30 @@ import (
 //	                  foreach iteration, fid "<occ>.<n>")
 //	frame-end/<fid>   the outcome the frame finished with
 //	gate/<occ>        the gate request an approval occurrence opened
+//	gate-closed/<occ> that gate closed without a decision (triage sent the
+//	                  run into the node again)
 //	question/<occ>    the question request a question occurrence opened
 //	deviation/<occ>/<n>  the n-th deviation gate an occurrence opened
-//	decision/<occ>/<n>   the human's decision on that gate
+//	decision/<occ>/<n>   the human's decision on that gate, or "superseded"
+//	                     when triage sent the run into the node again
 //	concern/<occ>/<n>      the n-th concern reported from an occurrence
 //	triage-gate/<occ>/<n>  the triage gate opened for it
 //	triage/<occ>/<n>       the human's decision on that gate
 //	answer/<occ>/<n>       the n-th answer to a role question's ask_human
 //	blocked           why the run stopped
 const (
-	keyStart     = "start"
-	keyBlocked   = "blocked"
-	prefOcc      = "occ/"
-	prefResult   = "result/"
-	prefFrame    = "frame/"
-	prefFrameEnd = "frame-end/"
-	prefGate     = "gate/"
-	prefQuestion = "question/"
-	prefDevGate  = "deviation/"
-	prefDevDec   = "decision/"
-	rootFrame    = "root"
+	keyStart       = "start"
+	keyBlocked     = "blocked"
+	prefOcc        = "occ/"
+	prefResult     = "result/"
+	prefFrame      = "frame/"
+	prefFrameEnd   = "frame-end/"
+	prefGate       = "gate/"
+	prefGateClosed = "gate-closed/"
+	prefQuestion   = "question/"
+	prefDevGate    = "deviation/"
+	prefDevDec     = "decision/"
+	rootFrame      = "root"
 	// Seven digits keep lexical and numeric order equal well past Fuse.
 	idWidth = 7
 )

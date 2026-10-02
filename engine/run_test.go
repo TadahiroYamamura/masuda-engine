@@ -70,6 +70,7 @@ type fakeRunner struct {
 	outputs map[string][]byte
 	gates   int
 	events  []Event
+	changed []string // what ChangedSince reports
 }
 
 func (r *fakeRunner) SetPolicy(context.Context, RunID, Policy) error { return nil }
@@ -91,7 +92,7 @@ func (r *fakeRunner) Snapshot(_ context.Context, _ RunID, occ string) (SnapshotR
 	return SnapshotRef("snap-" + occ), nil
 }
 func (r *fakeRunner) ChangedSince(context.Context, RunID, SnapshotRef) ([]string, string, error) {
-	return nil, "", nil
+	return r.changed, strings.Join(r.changed, ","), nil
 }
 func (r *fakeRunner) OpenGate(context.Context, GateRequest) error { r.gates++; return nil }
 func (r *fakeRunner) Log(e Event)                                 { r.events = append(r.events, e) }

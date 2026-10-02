@@ -272,8 +272,59 @@ func (e *Engine) decideTriage(run RunID, occ string, d Decision) error {
 		}
 	}
 	e.log(run, Event{Kind: "decision", Occurrence: occ, Workflow: wf, Node: node, Outcome: d.Outcome, Detail: d.Comment})
+	if d.Outcome == "redo" || (d.Outcome == "dismiss" && recs.results[c.Gate.Interrupted] == nil) {
+		if err := e.supersede(run, recs, c.Gate.Interrupted); err != nil {
+			return err
+		}
+	}
 	action := map[string]string{"dismiss": "懸念を退けて続ける", "halt": "runを止める", "redo": "差し戻して入り直す"}[d.Outcome]
 	e.log(run, Event{Kind: "triage", Occurrence: c.Gate.Interrupted, Workflow: wf, Node: node, Outcome: d.Outcome,
 		Detail: strings.Join([]string{action, c.Text}, ": ")})
+	return nil
+}
+
+// outcomeSuperseded closes a gate no human decided: triage sent the run into
+// the node that opened it again, and the new entry opens its own gate.
+const outcomeSuperseded = "superseded"
+
+// supersede closes whatever gate occurrence id still has open, so neither
+// Status nor a host listing gates keeps showing it. It is called both when
+// the triage decision is recorded and when the run re-enters the node; the
+// records are written only if absent, so the second call does nothing.
+func (e *Engine) supersede(run RunID, r *records, id string) error {
+	var o *occurrence
+	for _, x := range r.occs {
+		if x.ID == id {
+			o = x
+		}
+	}
+	if o == nil {
+		return nil
+	}
+	n, err := e.nodeOf(o)
+	if err != nil {
+		return err
+	}
+	d := Decision{Outcome: outcomeSuperseded, Comment: "triageで無効になった"}
+	closed := func(key, gate string) error {
+		applied, err := e.create(run, key, d)
+		if err == nil && applied {
+			e.log(run, Event{Kind: "decision", Occurrence: id, Workflow: o.Workflow, Node: o.Node, Outcome: outcomeSuperseded,
+				Detail: gate + ": " + d.Comment})
+		}
+		return err
+	}
+	if n.Type == NodeApproval && r.results[id] == nil {
+		if _, ok, err := e.store.Get(runKey(run, prefGate+id)); err != nil {
+			return err
+		} else if ok {
+			if err := closed(prefGateClosed+id, n.Gate); err != nil {
+				return err
+			}
+		}
+	}
+	if gs := r.devs[id]; len(gs) > 0 && gs[len(gs)-1].Decision == nil {
+		return closed(prefDevDec+devKey(id, gs[len(gs)-1].N), GateDeviation)
+	}
 	return nil
 }

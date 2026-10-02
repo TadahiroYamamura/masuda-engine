@@ -204,3 +204,75 @@ func TestPublishNeedsTheReviewedCommit(t *testing.T) {
 		t.Fatalf("a commit after the review must block publish, got %+v", s)
 	}
 }
+
+// superseded reports whether occ's gate was closed as superseded, both in
+// the log and in the store.
+func superseded(t *testing.T, e *Engine, r *fakeRunner, occ, key string) {
+	t.Helper()
+	found := false
+	for _, ev := range r.events {
+		if ev.Kind == "decision" && ev.Occurrence == occ && ev.Outcome == outcomeSuperseded {
+			if found {
+				t.Fatalf("gate of %s closed twice: %+v", occ, r.events)
+			}
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("no superseded decision for %s: %+v", occ, r.events)
+	}
+	var d Decision
+	if err := e.getJSON("r", key, &d); err != nil || d.Outcome != outcomeSuperseded {
+		t.Fatalf("%s: %+v %v", key, d, err)
+	}
+}
+
+// An approval gate the triage interrupted is closed when the run enters
+// the approval again, and only the new gate is shown.
+func TestTriageSupersedesAnInterruptedApprovalGate(t *testing.T) {
+	e, r := triageEngine(t, triageFiles())
+	ctx := context.Background()
+	s := mustAdvance(t, e)
+	_ = e.ReportResult(ctx, "r", s.Occurrence, "done", "")
+	gate := mustAdvance(t, e)
+	if gate.Kind != StatusGate || gate.Gate.Gate != "plan" {
+		t.Fatalf("want plan gate, got %+v", gate)
+	}
+	g := raise(t, e, s.Occurrence, "late")
+	if err := e.Decide(ctx, "r", g.Occurrence, Decision{Outcome: "dismiss"}); err != nil {
+		t.Fatal(err)
+	}
+	superseded(t, e, r, gate.Occurrence, prefGateClosed+gate.Occurrence)
+	s2 := mustAdvance(t, e)
+	if s2.Kind != StatusGate || s2.Gate.Gate != "plan" || s2.Occurrence == gate.Occurrence {
+		t.Fatalf("want a new plan gate, got %+v", s2)
+	}
+	if st, _ := e.Status(ctx, "r"); st.Occurrence != s2.Occurrence {
+		t.Fatalf("Status must show the new gate only: %+v", st)
+	}
+	superseded(t, e, r, gate.Occurrence, prefGateClosed+gate.Occurrence)
+	if err := e.Decide(ctx, "r", gate.Occurrence, Decision{Outcome: "approved", TargetHash: gate.Gate.TargetHash}); err == nil {
+		t.Fatal("a superseded gate takes no decision")
+	}
+}
+
+// A deviation gate the triage interrupted is closed on redo.
+func TestTriageSupersedesAnInterruptedDeviationGate(t *testing.T) {
+	e, r := triageEngine(t, triageFiles())
+	ctx := context.Background()
+	s := mustAdvance(t, e)
+	r.changed = []string{"sneaky.go"}
+	_ = e.ReportResult(ctx, "r", s.Occurrence, "done", "")
+	dev := mustAdvance(t, e)
+	if dev.Kind != StatusGate || dev.Gate.Gate != GateDeviation {
+		t.Fatalf("want deviation gate, got %+v", dev)
+	}
+	g := raise(t, e, s.Occurrence, "it wrote a file")
+	if err := e.Decide(ctx, "r", g.Occurrence, Decision{Outcome: "redo"}); err != nil {
+		t.Fatal(err)
+	}
+	superseded(t, e, r, dev.Occurrence, prefDevDec+devKey(dev.Occurrence, 1))
+	if s2 := mustAdvance(t, e); s2.Kind != StatusAgent || s2.Occurrence == s.Occurrence {
+		t.Fatalf("redo must enter the planner again, got %+v", s2)
+	}
+}

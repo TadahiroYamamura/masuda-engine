@@ -154,6 +154,12 @@ func (m *mover) step(frameID string) (Status, bool, error) {
 		return Status{}, false, fmt.Errorf("engine: %s has no node %s", w.Path, cur.Node)
 	}
 	if fb, ok := m.recs.reenter[cur.ID]; ok {
+		if err := m.need(); err != nil {
+			return Status{}, false, err
+		}
+		if err := m.e.supersede(m.run, m.recs, cur.ID); err != nil {
+			return Status{}, false, err
+		}
 		return m.enter(&fr, w, n.ID, fb)
 	}
 	if res := m.recs.results[cur.ID]; res != nil {
