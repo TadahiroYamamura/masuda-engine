@@ -8,6 +8,7 @@ nodes:
     max: 3
     next:
       done: recheck
+      cannot_fix: end:unresolved
       exhausted: end:unresolved
   recheck:
     type: agent
