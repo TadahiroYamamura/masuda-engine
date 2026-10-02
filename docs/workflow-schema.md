@@ -114,5 +114,6 @@ outcomes:
 
 - `schemas/<data>.json`があるデータは、受け取る境界でJSON Schema（draft 2020-12）で検証する
 - 同梱スキーマ: `plan`（summary、steps[]、expected_byproducts[]）、`findings`（file、line、severity、autofix、message…）、`commit-message`、`selected-perspectives`、`answers`
+- スキーマのトップレベルが`string`型なら、出力ファイルの内容そのものを1つの文字列として検証する（JSONとしてパースしない）。`commit-message`がこれに当たる
 - スキーマが無いデータは空でないことだけ確かめる
 - エンジンが用意するデータ: `diff`、`step-diff`、`fix-diff`（unified diff）
