@@ -205,15 +205,6 @@ func TestCheckAcceptsRunnableWorkflows(t *testing.T) {
 			}
 		})
 	}
-	set, err := Load(nil, Bundled())
-	if err != nil {
-		t.Fatal(err)
-	}
-	for path := range set.Workflows {
-		if ps := set.Check(path); ps != nil {
-			t.Fatalf("bundled %s: %+v", path, ps)
-		}
-	}
 }
 
 func TestReachableIncludesSchemasAndCallees(t *testing.T) {

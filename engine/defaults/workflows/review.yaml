@@ -1,0 +1,19 @@
+version: 1
+start: review
+nodes:
+  review:
+    type: workflow
+    workflow: workflows/review/perspectives
+    next: cross-cutting
+  cross-cutting:
+    type: workflow
+    workflow: workflows/review/cross-cutting
+    next: report
+  report:
+    type: agent
+    role: agents/synthesizer
+    next: cleanup
+  cleanup:
+    type: discard
+    export: [report, findings]
+    next: end
