@@ -14,6 +14,7 @@ type e5Runner struct {
 	commits []CommitRequest
 	diffs   []SnapshotRef
 	snaps   []string
+	since   []SnapshotRef
 }
 
 func (r *e5Runner) Snapshot(_ context.Context, _ RunID, occ string) (SnapshotRef, error) {
@@ -23,7 +24,8 @@ func (r *e5Runner) Snapshot(_ context.Context, _ RunID, occ string) (SnapshotRef
 func (r *e5Runner) Items(context.Context, RunID, string, DataRef) ([]Item, error) {
 	return r.items, nil
 }
-func (r *e5Runner) ChangedSince(context.Context, RunID, SnapshotRef) ([]string, string, error) {
+func (r *e5Runner) ChangedSince(_ context.Context, _ RunID, from SnapshotRef) ([]string, string, error) {
+	r.since = append(r.since, from)
 	return r.changed, "h:" + strings.Join(r.changed, ","), nil
 }
 func (r *e5Runner) Commit(_ context.Context, c CommitRequest) (CommitResult, error) {
@@ -194,5 +196,30 @@ func TestFindingsIterationIsFixDiffOrigin(t *testing.T) {
 	fid := s.Task.Inputs["finding"].Occurrence
 	if len(r.diffs) != 1 || r.diffs[0] != SnapshotRef("snap-"+fid) || s.Task.Inputs["fix-diff"].Name != "fix-diff" {
 		t.Fatalf("fix-diff must start from the iteration's snapshot %s: diffs=%v inputs=%+v", fid, r.diffs, s.Task.Inputs)
+	}
+}
+
+// A file a deviation gate showed but the human left out stays uncommitted.
+// The next step's commit compares with the branch head and so sees it
+// again; it is a byproduct there, not a new question.
+func TestFileLeftOutAtAnEarlierCommitIsNotAskedAgain(t *testing.T) {
+	e, r := e5Engine(t, "continue")
+	ctx := context.Background()
+	s := mustAdvance(t, e)
+	r.changed = []string{"b.go", "x.go"}
+	_ = e.ReportResult(ctx, "r", s.Occurrence, "done", "")
+	s = mustAdvance(t, e)
+	if s.Kind != StatusGate || s.Gate.Gate != GateDeviation {
+		t.Fatalf("want deviation gate on x.go, got %+v", s)
+	}
+	_ = e.Decide(ctx, "r", s.Occurrence, Decision{Outcome: "approved", TargetHash: s.Gate.TargetHash})
+	s = mustAdvance(t, e)
+	r.changed = []string{"c.go", "x.go"}
+	_ = e.ReportResult(ctx, "r", s.Occurrence, "done", "")
+	if s = mustAdvance(t, e); s.Kind != StatusDone {
+		t.Fatalf("x.go was already decided on; want done, got %+v", s)
+	}
+	if len(r.commits) != 2 || !slices.Contains(r.commits[1].Byproducts, "x.go") || slices.Contains(r.commits[1].Allowed, "x.go") {
+		t.Fatalf("the second commit must carry x.go as a byproduct: %+v", r.commits)
 	}
 }

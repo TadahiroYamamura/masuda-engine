@@ -594,11 +594,7 @@ func (m *mover) approval(fr *frame, cur *occurrence, n *Node) (Status, bool, err
 // changes, which publish will not land. The hash stays the committed diff's:
 // the human approves what lands, and the list is only shown.
 func (m *mover) withUnpublished(diff []byte) ([]byte, error) {
-	base := m.workStart()
-	if base == "" {
-		return diff, nil
-	}
-	files, _, err := m.e.runner.ChangedSince(m.ctx, m.run, base)
+	files, _, err := m.e.runner.ChangedSince(m.ctx, m.run, "")
 	if err != nil || len(files) == 0 {
 		return diff, err
 	}

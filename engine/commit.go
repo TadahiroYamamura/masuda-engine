@@ -27,14 +27,12 @@ type stepDoc struct {
 // prepareBase fixes the snapshot an occurrence compares the worktree with.
 // The worktree does not change between nodes, so an agent or exec starts
 // where the frame's previous boundary left it; only a frame's first such
-// node has to take a snapshot of its own. A commit compares with where the
-// work since the last commit started.
+// node has to take a snapshot of its own. A commit needs none: it compares
+// with the branch head (ChangedSince with an empty base).
 func (m *mover) prepareBase(fr *frame, n *Node, occ *occurrence) error {
 	switch n.Type {
 	case NodeAgent, NodeExec:
 		occ.Base = m.lastBoundary(fr.ID)
-	case NodeCommit:
-		occ.Base = m.workStart()
 	default:
 		return nil
 	}
@@ -72,22 +70,6 @@ func (r *records) lastCommit() string {
 	for i := len(r.occs) - 1; i >= 0; i-- {
 		if res := r.results[r.occs[i].ID]; res != nil && res.Commit != "" {
 			return r.occs[i].ID
-		}
-	}
-	return ""
-}
-
-// workStart is the base of the first agent or exec after the run's last
-// commit, in any frame: occurrence ids are in time order, and frames run
-// one at a time, so that is where the uncommitted work began.
-func (m *mover) workStart() SnapshotRef {
-	after := m.recs.lastCommit()
-	for _, o := range m.recs.occs {
-		if o.ID <= after || o.Base == "" {
-			continue
-		}
-		if n, err := m.e.nodeOf(o); err == nil && (n.Type == NodeAgent || n.Type == NodeExec) {
-			return o.Base
 		}
 	}
 	return ""
@@ -167,21 +149,27 @@ func (m *mover) commit(fr *frame, cur *occurrence, n *Node) (Status, bool, error
 			req.Allowed = append(req.Allowed, f)
 		}
 	}
-	// What this commit's gates showed but the human left out stays in the
-	// worktree uncommitted; as a byproduct the host neither commits it nor
-	// reports it again as a deviation of this commit.
-	for _, g := range gates {
-		if g.Decision == nil || g.Decision.Outcome != OutcomeApproved {
-			continue
-		}
-		for _, f := range g.Files {
-			if !slices.Contains(req.Allowed, f) && !slices.Contains(req.Byproducts, f) {
-				req.Byproducts = append(req.Byproducts, f)
+	// What a deviation gate of the run showed but the human left out stays in
+	// the worktree uncommitted; as a byproduct the host neither commits it nor
+	// reports it again as a deviation. Run-wide, not just this commit's gates:
+	// the check below compares with the branch head, so a file left out at
+	// an earlier commit is still there and was already decided on.
+	for _, gs := range m.recs.devs {
+		for _, g := range gs {
+			if g.Decision == nil || g.Decision.Outcome != OutcomeApproved {
+				continue
+			}
+			for _, f := range g.Files {
+				if !slices.Contains(req.Allowed, f) && !slices.Contains(req.Byproducts, f) {
+					req.Byproducts = append(req.Byproducts, f)
+				}
 			}
 		}
 	}
+	// devs is a map: sort what it added so a repeated request is the same.
+	slices.Sort(req.Byproducts[len(plan.ExpectedByproducts):])
 	if len(gates) == 0 {
-		files, hash, err := m.e.runner.ChangedSince(m.ctx, m.run, cur.Base)
+		files, hash, err := m.e.runner.ChangedSince(m.ctx, m.run, "")
 		if err != nil {
 			return Status{}, false, err
 		}

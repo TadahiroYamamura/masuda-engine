@@ -276,3 +276,40 @@ func TestTriageSupersedesAnInterruptedDeviationGate(t *testing.T) {
 		t.Fatalf("redo must enter the planner again, got %+v", s2)
 	}
 }
+
+// The commit's deviation check and the review gate's unpublished list both
+// compare with the branch head (an empty base), not with a snapshot.
+func TestCommitAndReviewGateCompareWithTheBranchHead(t *testing.T) {
+	set, err := Load(mapFS(map[string]string{
+		"agents/planner.md": agentDef("planner", "Read", []string{"plan"}),
+		"workflows/x.yaml": "version: 1\ninputs: [instructions]\nstart: plan\nnodes:\n" +
+			"  plan: {type: agent, role: agents/planner, inputs: [instructions], next: approve}\n" +
+			"  approve: {type: approval, gate: plan, target: plan, next: {approved: c, rejected: plan}}\n" +
+			"  c: {type: commit, scope: plan, next: {done: review, rejected: review}}\n" +
+			"  review: {type: approval, gate: review, target: diff, next: {approved: pub, rejected: plan}}\n" +
+			"  pub: {type: publish, next: end}\n",
+	}), Bundled())
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := &e5Runner{fakeRunner: fakeRunner{data: map[string][]byte{"/instructions": []byte("x")}, outputs: map[string][]byte{"plan": []byte(e5Plan)}},
+		changed: []string{"a.go"}}
+	e := New(set, &kvStore{m: map[string][]byte{}}, r, Options{})
+	ctx := context.Background()
+	_ = e.Start(ctx, "r", "workflows/x", []string{"instructions"})
+	s := mustAdvance(t, e)
+	_ = e.ReportResult(ctx, "r", s.Occurrence, "done", "")
+	s = mustAdvance(t, e)
+	_ = e.Decide(ctx, "r", s.Occurrence, Decision{Outcome: "approved", TargetHash: s.Gate.TargetHash})
+	n := len(r.since)
+	s = mustAdvance(t, e)
+	if s.Kind != StatusGate || s.Gate.Gate != "review" || len(r.commits) != 1 {
+		t.Fatalf("want review gate after one commit, got %+v", s)
+	}
+	if got := r.since[n:]; len(got) != 2 || got[0] != "" || got[1] != "" {
+		t.Fatalf("commit and review gate must call ChangedSince with an empty base, got %q", got)
+	}
+	if subj := string(s.Gate.Subject); !strings.HasPrefix(subj, "diff") || !strings.Contains(subj, "publishされない変更") || !strings.Contains(subj, "a.go") {
+		t.Fatalf("subject: %s", subj)
+	}
+}
