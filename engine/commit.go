@@ -68,10 +68,10 @@ func (m *mover) lastBoundary(frameID string) SnapshotRef {
 }
 
 // lastCommit is the id of the run's latest occurrence that committed.
-func (m *mover) lastCommit() string {
-	for i := len(m.recs.occs) - 1; i >= 0; i-- {
-		if res := m.recs.results[m.recs.occs[i].ID]; res != nil && res.Commit != "" {
-			return m.recs.occs[i].ID
+func (r *records) lastCommit() string {
+	for i := len(r.occs) - 1; i >= 0; i-- {
+		if res := r.results[r.occs[i].ID]; res != nil && res.Commit != "" {
+			return r.occs[i].ID
 		}
 	}
 	return ""
@@ -81,7 +81,7 @@ func (m *mover) lastCommit() string {
 // commit, in any frame: occurrence ids are in time order, and frames run
 // one at a time, so that is where the uncommitted work began.
 func (m *mover) workStart() SnapshotRef {
-	after := m.lastCommit()
+	after := m.recs.lastCommit()
 	for _, o := range m.recs.occs {
 		if o.ID <= after || o.Base == "" {
 			continue
@@ -223,7 +223,7 @@ func (m *mover) plan(fr *frame, occ string) (*planDoc, error) {
 // any. An older one describes work that is already committed.
 func (m *mover) commitMessage() (string, error) {
 	o, ok := m.recs.latest[dataCommitMessage]
-	if !ok || o <= m.lastCommit() {
+	if !ok || o <= m.recs.lastCommit() {
 		return "", nil
 	}
 	b, err := m.e.runner.GetData(m.ctx, m.run, DataRef{Name: dataCommitMessage, Occurrence: o})
@@ -306,23 +306,43 @@ func (e *Engine) decideDeviation(run RunID, o *occurrence, gate *GateRequest, d 
 	return nil
 }
 
-// publish lands the run's latest commit. The contract has it carry the
-// commit the review gate approved; until the review gate records which
-// commit it saw, the latest commit stands in for it.
+// publish lands the commit the last approval of the diff saw. Landing
+// anything else would put work on the branch no human approved, so a run
+// with no such approval, or with commits made after it, stops instead.
 func (m *mover) publish(cur *occurrence, n *Node) (Status, bool, error) {
 	if err := m.need(); err != nil {
 		return Status{}, false, err
+	}
+	approval, commit := m.approvedCommit()
+	if commit == "" {
+		return m.block(cur.ID, cur.Workflow, cur.Node, fmt.Sprintf("%s: node %s: 差分のレビューで承認されたコミットが無い", cur.Workflow, cur.Node))
+	}
+	if last := m.recs.lastCommit(); last > approval {
+		return m.block(cur.ID, cur.Workflow, cur.Node, fmt.Sprintf("%s: node %s: 承認後にコミットが進んだ（承認 %s、最新 %s）",
+			cur.Workflow, cur.Node, commit, m.recs.results[last].Commit))
 	}
 	target := n.PublishTarget
 	if target == "" {
 		target = "local"
 	}
-	commit := ""
-	if id := m.lastCommit(); id != "" {
-		commit = m.recs.results[id].Commit
-	}
 	if err := m.e.runner.Publish(m.ctx, PublishRequest{Run: m.run, Target: target, Commit: commit, Export: n.Export}); err != nil {
 		return Status{}, false, err
 	}
 	return m.finish(cur, OutcomeDone, "", nil)
+}
+
+// approvedCommit is the run's latest approval of the diff and the commit it
+// approved ("" when none was made before it).
+func (m *mover) approvedCommit() (occ, commit string) {
+	for i := len(m.recs.occs) - 1; i >= 0; i-- {
+		o := m.recs.occs[i]
+		res := m.recs.results[o.ID]
+		if res == nil || res.Outcome != OutcomeApproved {
+			continue
+		}
+		if n, err := m.e.nodeOf(o); err == nil && n.Type == NodeApproval && n.Target == string(DiffFromBase) {
+			return o.ID, res.ApprovedCommit
+		}
+	}
+	return "", ""
 }

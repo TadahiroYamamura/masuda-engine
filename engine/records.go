@@ -24,7 +24,10 @@ import (
 //	question/<occ>    the question request a question occurrence opened
 //	deviation/<occ>/<n>  the n-th deviation gate an occurrence opened
 //	decision/<occ>/<n>   the human's decision on that gate
-//	concern/<occ>     (E6) a concern reported during an occurrence
+//	concern/<occ>/<n>      the n-th concern reported from an occurrence
+//	triage-gate/<occ>/<n>  the triage gate opened for it
+//	triage/<occ>/<n>       the human's decision on that gate
+//	answer/<occ>/<n>       the n-th answer to a role question's ask_human
 //	blocked           why the run stopped
 const (
 	keyStart     = "start"
@@ -87,6 +90,9 @@ type result struct {
 	DeviationHash string   `json:"deviation_hash,omitempty"`
 	// Commit is the hash a commit occurrence made.
 	Commit string `json:"commit,omitempty"`
+	// ApprovedCommit is the latest commit when an approval of the diff was
+	// given: what publish is allowed to land.
+	ApprovedCommit string `json:"approved_commit,omitempty"`
 }
 
 // devGate is one deviation gate and, once decided, its decision.
@@ -126,12 +132,19 @@ type records struct {
 	maxID  int
 	// devs are the deviation gates per opening occurrence, in order.
 	devs map[string][]*devGate
+	// concerns are every reported concern, in key order. triaged are the
+	// occurrences a decided triage gate interrupted; reenter are those of
+	// them the run enters again, with the feedback for the new entry.
+	concerns []*concern
+	triaged  map[string]bool
+	reenter  map[string]string
 }
 
 func runKey(run RunID, k string) string { return string(run) + "/" + k }
 
 func (e *Engine) loadRecords(run RunID) (*records, error) {
-	r := &records{byFrame: map[string][]*occurrence{}, results: map[string]*result{}, latest: map[string]string{}, devs: map[string][]*devGate{}}
+	r := &records{byFrame: map[string][]*occurrence{}, results: map[string]*result{}, latest: map[string]string{}, devs: map[string][]*devGate{},
+		triaged: map[string]bool{}, reenter: map[string]string{}}
 	kvs, err := e.store.List(runKey(run, prefOcc))
 	if err != nil {
 		return nil, err
@@ -169,6 +182,9 @@ func (e *Engine) loadRecords(run RunID) (*records, error) {
 		}
 	}
 	if err := e.loadDeviations(run, r); err != nil {
+		return nil, err
+	}
+	if err := e.loadConcerns(run, r); err != nil {
 		return nil, err
 	}
 	return r, nil
@@ -214,9 +230,13 @@ func (e *Engine) loadDeviations(run RunID, r *records) error {
 func devKey(occ string, n int) string { return fmt.Sprintf("%s/%03d", occ, n) }
 
 // decided reports whether a human decided anything on occurrence o: an
-// approval node's result, or a deviation gate it opened.
+// approval node's result, a deviation gate it opened, or a triage gate that
+// interrupted it.
 func (r *records) decided(o *occurrence, n *Node) bool {
 	if n != nil && n.Type == NodeApproval && r.results[o.ID] != nil {
+		return true
+	}
+	if r.triaged[o.ID] {
 		return true
 	}
 	for _, g := range r.devs[o.ID] {

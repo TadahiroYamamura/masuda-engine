@@ -516,7 +516,7 @@ func (e *Engine) Answer(ctx context.Context, run RunID, occurrence string, a Ans
 // ReportConcern records a security concern raised by the guest. The next
 // Advance opens the triage gate before anything else.
 func (e *Engine) ReportConcern(ctx context.Context, run RunID, occurrence, text string) error {
-	return ErrNotImplemented
+	return e.reportConcern(ctx, run, occurrence, text)
 }
 
 // Status returns the current status without moving the run.

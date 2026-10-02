@@ -116,6 +116,14 @@ func (e *Engine) walk(ctx context.Context, run RunID, mutate bool) (Status, erro
 			return Status{}, err
 		}
 		m.recs = recs
+		if st, handled, moved, err := m.triage(); err != nil {
+			return Status{}, err
+		} else if handled {
+			if !moved {
+				return st, nil
+			}
+			continue
+		}
 		st, moved, err := m.step(rootFrame)
 		if err != nil {
 			return Status{}, err
@@ -144,6 +152,9 @@ func (m *mover) step(frameID string) (Status, bool, error) {
 	n := w.Nodes[cur.Node]
 	if n == nil {
 		return Status{}, false, fmt.Errorf("engine: %s has no node %s", w.Path, cur.Node)
+	}
+	if fb, ok := m.recs.reenter[cur.ID]; ok {
+		return m.enter(&fr, w, n.ID, fb)
 	}
 	if res := m.recs.results[cur.ID]; res != nil {
 		if len(res.Deviation) > 0 {
@@ -191,8 +202,8 @@ func (m *mover) step(frameID string) (Status, bool, error) {
 
 // enter records an entry into node id, or an exhausted entry when the node's
 // max is reached. Entries are counted since the frame's last human decision
-// (an approval, or a deviation gate): a human looking at the work restarts
-// the budget.
+// (an approval, a deviation gate, or a triage gate): a human looking at the
+// work restarts the budget.
 func (m *mover) enter(fr *frame, w *Workflow, id, feedback string) (Status, bool, error) {
 	if err := m.need(); err != nil {
 		return Status{}, false, err
@@ -543,11 +554,6 @@ func (e *Engine) reportResult(ctx context.Context, run RunID, occ, outcome, feed
 	if err != nil {
 		return err
 	}
-	if n.Type == NodeQuestion {
-		// The ask_human path (Answer during the task, then this report) is
-		// not settled yet; see HANDOFF.md.
-		return fmt.Errorf("engine: question node %s with a role: %w", n.ID, ErrNotImplemented)
-	}
 	a := st.Task.Agent
 	if _, ok := a.Outcomes[outcome]; !ok {
 		e.log(run, Event{Kind: "invalid", Occurrence: occ, Workflow: o.Workflow, Node: o.Node, Outcome: outcome, Detail: "undeclared outcome"})
@@ -572,6 +578,16 @@ func (e *Engine) reportResult(ctx context.Context, run RunID, occ, outcome, feed
 			}
 			got[name] = c
 		}
+		var answers []byte
+		if n.Type == NodeQuestion {
+			var reason string
+			if answers, reason, err = e.collectedAnswers(run, occ, n.Outputs[0]); err != nil {
+				return err
+			}
+			if reason != "" {
+				reasons = append(reasons, reason)
+			}
+		}
 		if len(reasons) > 0 {
 			detail := strings.Join(reasons, "; ")
 			e.log(run, Event{Kind: "invalid", Occurrence: occ, Workflow: o.Workflow, Node: o.Node, Outcome: outcome, Detail: detail})
@@ -587,6 +603,14 @@ func (e *Engine) reportResult(ctx context.Context, run RunID, occ, outcome, feed
 			}
 		}
 		res.Outputs = o.Outputs
+		if n.Type == NodeQuestion {
+			name := n.Outputs[0]
+			if err := e.runner.PutData(ctx, run, DataRef{Name: name, Occurrence: occ}, answers); err != nil {
+				return err
+			}
+			res.Outcome = OutcomeAnswered
+			res.Outputs = append(slices.Clone(o.Outputs), name)
+		}
 	}
 	if err := e.finishAgent(ctx, run, o, a, &res); err != nil {
 		return err
@@ -616,19 +640,32 @@ func (e *Engine) decide(ctx context.Context, run RunID, occ string, d Decision) 
 	if err != nil {
 		return err
 	}
-	if st.Gate.Gate == GateDeviation {
+	switch st.Gate.Gate {
+	case GateTriage:
+		return e.decideTriage(run, occ, d)
+	case GateDeviation:
 		return e.decideDeviation(run, o, st.Gate, d)
 	}
+	res := result{Outcome: d.Outcome, Feedback: d.Comment}
 	switch d.Outcome {
 	case OutcomeApproved:
 		if d.TargetHash != st.Gate.TargetHash {
 			return fmt.Errorf("engine: approval for %s was made against %q, but the gate is on %q", occ, d.TargetHash, st.Gate.TargetHash)
 		}
+		if st.Gate.Target == string(DiffFromBase) {
+			recs, err := e.loadRecords(run)
+			if err != nil {
+				return err
+			}
+			if id := recs.lastCommit(); id != "" {
+				res.ApprovedCommit = recs.results[id].Commit
+			}
+		}
 	case OutcomeRejected:
 	default:
-		return fmt.Errorf("engine: gate %s: decision %q: %w", st.Gate.Gate, d.Outcome, ErrNotImplemented)
+		return fmt.Errorf("engine: gate %s takes approved or rejected, not %q", st.Gate.Gate, d.Outcome)
 	}
-	if err := e.record(run, o, result{Outcome: d.Outcome, Feedback: d.Comment}); err != nil {
+	if err := e.record(run, o, res); err != nil {
 		return err
 	}
 	e.log(run, Event{Kind: "decision", Occurrence: occ, Workflow: o.Workflow, Node: o.Node, Outcome: d.Outcome, Detail: d.Comment})

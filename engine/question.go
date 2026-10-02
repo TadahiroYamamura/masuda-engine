@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 )
 
 // question opens a fixed-question node once and then waits for Answer. Like
@@ -39,6 +40,17 @@ func (m *mover) question(cur *occurrence, n *Node) (Status, bool, error) {
 // and finishes the occurrence as answered. An answer that does not fit the
 // questions is refused without recording, so the human can answer again.
 func (e *Engine) answer(ctx context.Context, run RunID, occ string, a Answer) error {
+	if st, err := e.walk(ctx, run, false); err == nil && st.Kind == StatusAgent && st.Occurrence == occ {
+		var o occurrence
+		if err := e.getJSON(run, prefOcc+occ, &o); err != nil {
+			return err
+		}
+		if n, err := e.nodeOf(&o); err != nil {
+			return err
+		} else if n.Type == NodeQuestion {
+			return e.collectAnswer(run, &o, a)
+		}
+	}
 	st, o, err := e.waiting(ctx, run, occ, StatusQuestion)
 	if err != nil {
 		return err
@@ -79,4 +91,58 @@ func (e *Engine) answer(ctx context.Context, run RunID, occ string, a Answer) er
 	}
 	e.log(run, Event{Kind: "answer", Occurrence: occ, Workflow: o.Workflow, Node: o.Node, Outcome: OutcomeAnswered})
 	return nil
+}
+
+const prefAnswer = "answer/"
+
+// collectAnswer keeps one ask_human answer of a role question's task. Each
+// answer is its own record rather than a merged value, so two answers
+// arriving at once cannot overwrite each other; they are merged in order
+// when the agent reports done.
+func (e *Engine) collectAnswer(run RunID, o *occurrence, a Answer) error {
+	for {
+		kvs, err := e.store.List(runKey(run, prefAnswer+o.ID+"/"))
+		if err != nil {
+			return err
+		}
+		applied, err := e.create(run, prefAnswer+devKey(o.ID, len(kvs)+1), a)
+		if err != nil {
+			return err
+		}
+		if applied {
+			e.log(run, Event{Kind: "answer", Occurrence: o.ID, Workflow: o.Workflow, Node: o.Node})
+			return nil
+		}
+	}
+}
+
+// collectedAnswers merges the answers collected for occ (later ones win)
+// into the JSON stored as name. reason is non-empty when that cannot be
+// accepted as the node's result.
+func (e *Engine) collectedAnswers(run RunID, occ, name string) (content []byte, reason string, err error) {
+	kvs, err := e.store.List(runKey(run, prefAnswer+occ+"/"))
+	if err != nil {
+		return nil, "", err
+	}
+	slices.SortFunc(kvs, func(a, b KV) int { return strings.Compare(a.Key, b.Key) })
+	merged := map[string]string{}
+	for _, kv := range kvs {
+		var a Answer
+		if err := json.Unmarshal(kv.Value, &a); err != nil {
+			return nil, "", fmt.Errorf("%s: %w", kv.Key, err)
+		}
+		for k, v := range a.Answers {
+			merged[k] = v
+		}
+	}
+	if len(merged) == 0 {
+		return nil, "人間の答えが1つも無い（ask_humanで答えを得てから完了を報告する）", nil
+	}
+	if content, err = json.Marshal(merged); err != nil {
+		return nil, "", err
+	}
+	if err := e.validateData(name, content); err != nil {
+		return nil, fmt.Sprintf("集めた答えが%sとして不正: %v", name, err), nil
+	}
+	return content, "", nil
 }
