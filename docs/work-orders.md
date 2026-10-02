@@ -68,6 +68,11 @@
 - 同梱の`develop`・`review`・`build-step`を累積`findings`前提に見直し（`fix`は`findings[autofix=true]`を回す、synthesizerは累積の全件を読む）、C-E7を緑にする
 - 契約テスト: C-E1〜C-E7すべて
 
+## E9. 指摘の取り下げ（後回し。M8の実機1周の後に判断）
+
+- 累積データには要素を消す手段が無く、review-checkerが`inaccurate`とした誤検知も台帳に残ってsynthesizerが拾う。案: 累積データの要素に`withdrawn: true`を同じ`id`で書けば、読み出しから除く（累積の一般規則として契約に足す）。foreachのフィルタは`withdrawn`な要素を常に除く
+- 契約変更を伴うので、監督が決めてから着手する
+
 ## 契約テストの対応表
 
 | テスト | 項目 |
