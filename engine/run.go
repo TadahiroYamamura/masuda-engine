@@ -239,6 +239,10 @@ func (m *mover) enter(fr *frame, w *Workflow, id, feedback string) (Status, bool
 		}
 		if n.Type == NodeForeach {
 			if err := m.prepareItems(fr, n, occ); err != nil {
+				var bad *errItems
+				if errors.As(err, &bad) {
+					return m.block("", w.Path, id, bad.msg)
+				}
 				return Status{}, false, err
 			}
 		}
@@ -262,9 +266,9 @@ func (m *mover) prepareAgent(fr *frame, n *Node, occ *occurrence) error {
 	if a == nil {
 		return fmt.Errorf("engine: %s: no agent %s", n.ID, n.Role)
 	}
-	occ.Inputs = map[string]DataRef{}
-	for k, v := range fr.Inputs {
-		occ.Inputs[k] = v
+	var err error
+	if occ.Inputs, err = m.frameInputs(fr, occ.ID); err != nil {
+		return err
 	}
 	for _, name := range slices.Concat(n.Inputs, a.Inputs) {
 		if _, ok := occ.Inputs[name]; ok {
@@ -332,7 +336,20 @@ func (e *Engine) status(ctx context.Context, run RunID) (Status, error) {
 // resolve finds the value of data name as seen from fr: the frame's bound
 // inputs, then the latest value written in the run, then the run's own
 // inputs. Engine data is computed into a value of occ.
+//
+// Accumulated data is read run-wide whatever the frame bound: its value is
+// everything written so far, and an empty array when nothing was.
 func (m *mover) resolve(fr *frame, name, occ string) (DataRef, error) {
+	if m.e.set.accumulates(name) {
+		if o, ok := m.recs.latest[name]; ok {
+			return DataRef{Name: name, Occurrence: o}, nil
+		}
+		ref := DataRef{Name: name, Occurrence: occ}
+		if err := m.e.runner.PutData(m.ctx, m.run, ref, []byte("[]")); err != nil {
+			return DataRef{}, err
+		}
+		return ref, nil
+	}
 	if ref, ok := fr.Inputs[name]; ok {
 		return ref, nil
 	}
@@ -361,6 +378,24 @@ func (m *mover) resolve(fr *frame, name, occ string) (DataRef, error) {
 		return DataRef{Name: name}, nil
 	}
 	return DataRef{}, fmt.Errorf("data %q is not available", name)
+}
+
+// frameInputs is what an agent or exec in fr receives from the frame's
+// bindings. A binding of accumulated data to its own name is read again: it
+// was fixed when the frame began, and writes since then belong in it too.
+func (m *mover) frameInputs(fr *frame, occ string) (map[string]DataRef, error) {
+	out := map[string]DataRef{}
+	for k, v := range fr.Inputs {
+		if v.Name == k && m.e.set.accumulates(k) {
+			ref, err := m.resolve(fr, k, occ)
+			if err != nil {
+				return nil, err
+			}
+			v = ref
+		}
+		out[k] = v
+	}
+	return out, nil
 }
 
 func (e *Engine) task(run RunID, o *occurrence, n *Node) *AgentTask {
@@ -597,10 +632,12 @@ func (e *Engine) reportResult(ctx context.Context, run RunID, occ, outcome, feed
 			}
 			return e.record(run, o, res)
 		}
-		for _, name := range o.Outputs {
-			if err := e.runner.PutData(ctx, run, DataRef{Name: name, Occurrence: occ}, got[name]); err != nil {
-				return err
-			}
+		recs, err := e.loadRecords(run)
+		if err != nil {
+			return err
+		}
+		if err := e.putOutputs(ctx, run, recs, occ, o.Outputs, got); err != nil {
+			return err
 		}
 		res.Outputs = o.Outputs
 		if n.Type == NodeQuestion {

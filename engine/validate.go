@@ -14,6 +14,11 @@ import (
 // are compiled per call because Engine has no room for a cache in its
 // contract-fixed fields, and outputs arrive at agent pace, not in bulk.
 func (e *Engine) validateData(name string, content []byte) error {
+	if e.set.accumulates(name) {
+		if _, err := jsonArray(content); err != nil {
+			return err
+		}
+	}
 	raw, ok := e.set.Schemas[name]
 	if !ok {
 		if len(bytes.TrimSpace(content)) == 0 {

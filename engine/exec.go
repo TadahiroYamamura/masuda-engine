@@ -14,9 +14,9 @@ func (m *mover) exec(fr *frame, cur *occurrence, n *Node) (Status, bool, error) 
 	if err := m.need(); err != nil {
 		return Status{}, false, err
 	}
-	inputs := map[string]DataRef{}
-	for k, v := range fr.Inputs {
-		inputs[k] = v
+	inputs, err := m.frameInputs(fr, cur.ID)
+	if err != nil {
+		return Status{}, false, err
 	}
 	for _, name := range n.Inputs {
 		if _, ok := inputs[name]; ok {
@@ -59,10 +59,8 @@ func (m *mover) exec(fr *frame, cur *occurrence, n *Node) (Status, bool, error) 
 			m.e.log(m.run, Event{Kind: "invalid", Occurrence: cur.ID, Workflow: cur.Workflow, Node: n.ID, Outcome: OutcomeDone, Detail: detail})
 			res = result{Outcome: OutcomeDone, Invalid: true, Feedback: "前回の実行の出力は受け付けられなかった: " + detail}
 		} else {
-			for _, name := range n.Outputs {
-				if err := m.e.runner.PutData(m.ctx, m.run, DataRef{Name: name, Occurrence: cur.ID}, out.Outputs[name]); err != nil {
-					return Status{}, false, err
-				}
+			if err := m.e.putOutputs(m.ctx, m.run, m.recs, cur.ID, n.Outputs, out.Outputs); err != nil {
+				return Status{}, false, err
 			}
 			res.Outputs = n.Outputs
 		}

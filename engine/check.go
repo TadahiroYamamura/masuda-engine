@@ -335,6 +335,11 @@ func (c *checker) exports(workflows []string) {
 	for _, in := range c.set.Workflows[c.root].Inputs {
 		producible[in] = true
 	}
+	for name := range c.set.Schemas {
+		if c.set.accumulates(name) {
+			producible[name] = true
+		}
+	}
 	for _, path := range workflows {
 		w := c.set.Workflows[path]
 		for _, id := range w.Order {
@@ -403,41 +408,6 @@ func (c *checker) writeCapable(n *Node) bool {
 	}
 	a := c.set.agentFor(n.Role)
 	return a != nil && a.WriteCapable()
-}
-
-func overFrom(over string) string {
-	if m := overRe.FindStringSubmatch(over); m != nil {
-		return m[1]
-	}
-	return ""
-}
-
-// overSource is the data a foreach's items are taken from, and itemInput the
-// input name each item is handed to the body under.
-func overSource(over string) string {
-	switch {
-	case over == "steps":
-		return dataPlan
-	case over == "findings":
-		return "findings"
-	case over == "perspectives":
-		return ""
-	case overFrom(over) != "":
-		return dataSelectedPerspectives
-	}
-	return strings.TrimSuffix(over, "[]")
-}
-
-func itemInput(over string) string {
-	switch {
-	case over == "steps":
-		return "step"
-	case over == "findings":
-		return "finding"
-	case strings.HasPrefix(over, "perspectives"):
-		return "perspective"
-	}
-	return singular(strings.TrimSuffix(over, "[]"))
 }
 
 // singular turns a data name into the input name of one of its items

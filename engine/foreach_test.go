@@ -180,8 +180,8 @@ func TestFindingsIterationIsFixDiffOrigin(t *testing.T) {
 	if p := set.Check("workflows/x"); len(p) != 0 {
 		t.Fatalf("Check: %+v", p)
 	}
-	r := &e5Runner{fakeRunner: fakeRunner{data: map[string][]byte{}, outputs: map[string][]byte{"findings": []byte(`[]`)}}}
-	r.items = []Item{{Key: "f1", Input: "finding", Content: []byte(`{"file":"a.go"}`)}}
+	r := &e5Runner{fakeRunner: fakeRunner{data: map[string][]byte{}, outputs: map[string][]byte{
+		"findings": []byte(`[{"id":"f1","file":"a.go","line":1,"severity":"高","autofix":true,"message":"m"}]`)}}}
 	e := New(set, &kvStore{m: map[string][]byte{}}, r, Options{})
 	ctx := context.Background()
 	_ = e.Start(ctx, "r", "workflows/x", nil)

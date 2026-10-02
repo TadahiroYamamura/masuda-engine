@@ -82,7 +82,7 @@ func (a *avail) analyse(w *Workflow, entry map[string]bool, report bool) map[str
 // lacks.
 func (a *avail) effect(w *Workflow, nd *Node, have map[string]bool, report bool) map[string]map[string]bool {
 	out := map[string]map[string]bool{}
-	available := func(name string) bool { return have[name] || engineData[name] }
+	available := func(name string) bool { return have[name] || a.ready(name) }
 	need := func(name, format string, args ...any) {
 		if report && !available(name) {
 			a.c.fail(w.Path, nd.ID, format, args...)
@@ -150,7 +150,7 @@ func (a *avail) bind(w *Workflow, nd *Node, cw *Workflow, have map[string]bool, 
 		if b, ok := nd.With[in]; ok {
 			src = b
 		}
-		if report && !have[src] && !engineData[src] && src != item {
+		if report && !have[src] && !a.ready(src) && src != item {
 			if src == in {
 				a.c.fail(w.Path, nd.ID, "%s needs the input %q, which is not available on every path to this node", cw.Path, in)
 			} else {
@@ -160,6 +160,12 @@ func (a *avail) bind(w *Workflow, nd *Node, cw *Workflow, have map[string]bool, 
 		entry[in] = true
 	}
 	return entry
+}
+
+// ready is data available on every path regardless of what ran: what the
+// engine computes, and accumulated data (an empty array until written).
+func (a *avail) ready(name string) bool {
+	return engineData[name] || a.c.set.accumulates(name)
 }
 
 // meet intersects two availability sets; nil stands for "not reached yet"

@@ -94,7 +94,7 @@ func (m *mover) workStart() SnapshotRef {
 }
 
 // approvedFiles are the files every deviation gate of the run has approved
-// so far. An approval that names no files approves what the gate showed.
+// so far. An approval that names no files adds none.
 func (r *records) approvedFiles() []string {
 	var out []string
 	for _, gs := range r.devs {
@@ -102,11 +102,7 @@ func (r *records) approvedFiles() []string {
 			if g.Decision == nil || g.Decision.Outcome != OutcomeApproved {
 				continue
 			}
-			files := g.Decision.ApprovedFiles
-			if len(files) == 0 {
-				files = g.Files
-			}
-			for _, f := range files {
+			for _, f := range g.Decision.ApprovedFiles {
 				if !slices.Contains(out, f) {
 					out = append(out, f)
 				}
@@ -169,6 +165,19 @@ func (m *mover) commit(fr *frame, cur *occurrence, n *Node) (Status, bool, error
 	for _, f := range m.recs.approvedFiles() {
 		if !slices.Contains(req.Allowed, f) {
 			req.Allowed = append(req.Allowed, f)
+		}
+	}
+	// What this commit's gates showed but the human left out stays in the
+	// worktree uncommitted; as a byproduct the host neither commits it nor
+	// reports it again as a deviation of this commit.
+	for _, g := range gates {
+		if g.Decision == nil || g.Decision.Outcome != OutcomeApproved {
+			continue
+		}
+		for _, f := range g.Files {
+			if !slices.Contains(req.Allowed, f) && !slices.Contains(req.Byproducts, f) {
+				req.Byproducts = append(req.Byproducts, f)
+			}
 		}
 	}
 	if len(gates) == 0 {

@@ -32,7 +32,7 @@ nodes:
       incomplete: approve-interim
   interim-fix:
     type: foreach
-    over: findings
+    over: findings[autofix=true]
     on_incomplete: continue
     body: workflows/fix-finding
     next:

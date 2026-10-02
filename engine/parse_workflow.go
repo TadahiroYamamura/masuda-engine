@@ -13,7 +13,6 @@ import (
 var (
 	egressRe = regexp.MustCompile(`^(\*\.)?[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)*(:[0-9]{1,5})?$`)
 	secretRe = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
-	overRe   = regexp.MustCompile(`^(?:steps|findings|perspectives|perspectives\(from=([a-z0-9-]+)\)|([a-z][a-z0-9-]*)\[\])$`)
 )
 
 // allowedKeys is, per node type, every key besides `type` and `next` that the
@@ -140,9 +139,9 @@ func parseWorkflow(ref string, data []byte, le *loadError) *Workflow {
 				}
 			}
 		}
-		if m := overRe.FindStringSubmatch(n.Over); m != nil && m[1] != "" {
-			if _, ok := wf.Nodes[m[1]]; !ok {
-				le.add(ref, id, "over: no node %q", m[1])
+		if from := overFrom(n.Over); from != "" {
+			if _, ok := wf.Nodes[from]; !ok {
+				le.add(ref, id, "over: no node %q", from)
 			}
 		}
 	}
@@ -261,8 +260,8 @@ func parseNode(ref, id string, v *yaml.Node, le *loadError) *Node {
 			n.Questions, err = parseQuestions(val)
 		case "over":
 			n.Over, err = nonEmptyScalar(val)
-			if err == nil && !overRe.MatchString(n.Over) {
-				err = fmt.Errorf("must be steps, findings, perspectives, perspectives(from=<node>) or <data>[]")
+			if err == nil && !validOver(n.Over) {
+				err = fmt.Errorf("must be steps, perspectives, perspectives(from=<node>), findings, <data>[] or <data>[<field>=<value>]")
 			}
 		case "body":
 			n.Body, err = refValue(val, "workflows")

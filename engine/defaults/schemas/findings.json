@@ -1,12 +1,14 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "findings",
+  "x-masuda-accumulate": true,
   "type": "array",
   "items": {
     "type": "object",
     "additionalProperties": false,
-    "required": ["file", "line", "severity", "autofix", "message"],
+    "required": ["id", "file", "line", "severity", "autofix", "message"],
     "properties": {
+      "id": {"type": "string", "pattern": "^\\S+$"},
       "file": {
         "type": "string",
         "pattern": "^(?:[^/.][^/]*|\\.[^/.][^/]*|\\.\\.[^/]+)(?:/(?:[^/.][^/]*|\\.[^/.][^/]*|\\.\\.[^/]+))*$"
