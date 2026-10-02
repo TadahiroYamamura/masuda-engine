@@ -1,31 +1,24 @@
 # HANDOFF
 ## 作業項目
-E10（`target: diff`の承認対象・triageで中断されたゲートの後始末・feedbackのログ）と、その仕上げ（契約eca2e00: `ChangedSince("")`＝ブランチ先頭を、commitの計画外変更の検出と承認の未コミット一覧に使う）。完了
+E11（commit前の承認 `target: step-diff`）。完了（d5b4147）
 ## 完了した契約テスト
-C-E1〜C-E7すべて緑（`go test -count=1 ./contract/`）。`go vet ./...`指摘なし、`go test -count=1 ./...`緑
+C-E1〜C-E7すべて緑（`go test -count=1 ./contract/`）。C-E5の`approve-step`（`target: step-diff`）は、`resolve`経由の偶然ではなく`approval`の明示的な分岐で`Diff(step-diff)`を呼んで通る。`go vet ./...`指摘なし、`go test -count=1 ./...`緑
 ## 未完と理由
 なし
 ## 次の一手
-- masuda側（M12）で下の取り決めを実装し、サンドボックスイメージを再ビルドしてから実機1周で、review gateのSubjectと、triage後にゲート一覧から古いゲートが消えることを確かめる
+- masuda側（M13）で下の取り決めを確かめ、サンドボックスイメージを再ビルドしてから実機1周で、interim gateのSubjectにこれからcommitされる差分が出ることを確かめる
 ## 注意点
 - 実装の置き場所
-  - `engine/run.go`の`approval`: `target: diff`は`Runner.Diff(DiffCommitted, "", DataRef{Name: "committed-diff", Occurrence: ゲートの出現})`。`TargetHash`はこの差分だけのsha256。`withUnpublished`が`ChangedSince(ctx, run, "")`（ブランチ先頭＝未コミットの変更すべて）の一覧を`## publishされない変更（未コミット）`の見出しの下に1行1ファイルで足す（一覧が空なら見出しごと省く）。エージェントが読む`diff`データ（`DiffFromBase`）は従来どおり`resolve`が作る
-  - `engine/commit.go`の`commit`: 計画外変更の検出も`ChangedSince(ctx, run, "")`。commitの出現はもう基準スナップショットを取らない（`workStart`は削除）。書き込めないエージェントの前後比較は従来どおりスナップショット基準
-  - 基準をブランチ先頭にした帰結: 以前のcommitのdeviationゲートで人間が加えなかった（承認したが`ApprovedFiles`に入れなかった）ファイルは作業ツリーに残り、後のcommitでも見える。聞き直さないよう、`Byproducts`に入れる範囲を「このcommitのゲート」から「runの全deviationゲート」に広げた。`expected_byproducts`も同じ理由で毎回`Byproducts`に入る（従来どおり）
-  - 既知の制限: 加えなかったファイルをその後エージェントがさらに書き換えても、byproductのまま聞き直さない（ブランチ先頭基準ではいつ変わったかを区別できない）。却下（rejected）されたdeviationのファイルが作業ツリーに残っていれば、次のcommitで再び聞く
-  - `engine/triage.go`の`supersede`: 中断された出現の開いているゲートを閉じる。呼ぶのは`decideTriage`（triageの判断を記録した直後）と`step`の入り直し（`reenter`）の2箇所。記録は`create`（無いときだけ書く）なので重複しない
-  - `engine/run.go`の`putResult`/`record`は`detail`を取る。`reportResult`だけが`feedbackDetail(feedback)`（先頭200文字、超えたら`…`）を渡す。invalidになった報告でもエージェントが送ったfeedbackを載せる
-- **開いているゲートの判定方法**（engineの記録、キーはすべて`<run>/`の下）
-  - approval: `gate/<occ>`があり、`result/<occ>`も`gate-closed/<occ>`も無い
-  - deviation: `deviation/<occ>/<n>`があり、`decision/<occ>/<n>`が無い（`superseded`の判断もここに書かれる）
-  - triage: `triage-gate/<occ>/<n>`があり、`triage/<occ>/<n>`が無い
-  - 実行ログでは、`gate-open`の対は`decision`イベント。triageで無効になったゲートは`decision`（`outcome: "superseded"`、`occurrence`はゲートを開いた出現、`detail`は`<ゲート名>: triageで無効になった`）
-- `superseded`で閉じないケース: dismissで中断された出現が既に結果を持つ（書き込めないエージェントのdeviationゲート待ちに懸念が来た）とき。runは入り直さずそのゲートを待ち続けるので、ゲートは開いたまま
-- masuda側（M12）への取り決め
-  - `Runner.ChangedSince`の`from`が空のときはブランチ先頭からの変更を返すこと（契約eca2e00）。確認済み: masudaの`internal/runner/runner.go`の`ChangedSince`は空のとき`staging.BranchRef(ws.Branch)`を基準に、`git add -A`で取り込んだ今の作業ツリー（未追跡ファイルを含む）との`diff-tree`を返す。`staging`の`Commit`がこのrefを進めるので、commit直後も「未コミットのものだけ」になる。変更は不要
-  - `Runner.Diff`は`DiffCommitted`（`committed-diff`）を受けること。baseからブランチ先頭（`staging.BranchRef`）までの差分で、作業ツリーを取り込まない。今の`internal/runner`は未知の種類としてエラーを返すので、review gateで止まる
-  - masudaのゲート記録（`records/gates/`、`OpenGate`で書き`Decide`で埋める）は、`Runner.Log`に来る`kind: decision`・`outcome: superseded`のイベントで、その`occurrence`の最後のゲートを判断済み（outcome `superseded`）にすること。これをしないと`ListOpen`に古いゲートが残り、`Decide`は「not waiting」で失敗する
-  - `gate show`等で`superseded`の判断を表示するなら「triageで無効」と出す
-  - `finish`イベントの`detail`にエージェントのfeedback（先頭200文字）が入る
+  - `engine/run.go`の`approval`: `target`で分岐する。`diff`→`Runner.Diff(DiffCommitted, "", DataRef{Name: "committed-diff", Occurrence: ゲートの出現})`＋`withUnpublished`（E10のまま）。`step-diff`→`Runner.Diff(DiffFromHead, "", DataRef{Name: "step-diff", Occurrence: ゲートの出現})`、Subjectは差分そのもの、TargetHashはそのsha256、未コミット一覧は付けない。それ以外→`resolve`（データ名）
+  - diff・step-diffを`resolve`に通さないのは、`resolve`がフレームの束縛（`with`）や同名の以前の値を先に返すため。ゲートは常にその時点のブランチを見る
+  - `Decide`で`ApprovedCommit`を記録するのも、publishが参照する`approvedCommit`も、`target: diff`のゲートだけ。step-diffの承認はpublishの条件にならない
+  - `engine/avail.go`: approvalの`target`が`diff`/`step-diff`なら可用性を問わない。それ以外（`plan`・データ名）は可用性の解析で拒否される。`fix-diff`はエンジンのデータとして従来どおり受け付ける（foreachの外では`iterationTree`が無く実行時エラーになりうるが、E11の範囲外なので触っていない）
+  - `engine/parse_workflow.go`の`target`のエラー文に`step-diff`を足した
+  - 同梱`implement/build-step`の`approve-interim`は`target: step-diff`。Mermaidはノードの`target`をそのまま出すので追加の変更は無い
+- masuda側（M13）への取り決め
+  - interim gate（`target: step-diff`）の`GateRequest.Subject`は`Runner.Diff(DiffFromHead, "", into)`が`into`に書いた内容そのもの（ブランチ先頭..作業ツリー、未追跡ファイルを含む＝`staging`の`Commit`がこれから取り込む内容）。「publishされない変更」の見出しは付かない
+  - `TargetHash`はその内容のsha256（hex）。`Decide`の`TargetHash`はこれと一致させること
+  - `into`は`DataRef{Name: "step-diff", Occurrence: <ゲートの出現>}`。masudaの`Runner.Diff`は`step-diff`（`DiffFromHead`）を既に受けている（エージェントの`step-diff`データと同じ種類）はずだが、M13で確認すること
+  - `gate show`等で`Target`を表示するなら、`diff`＝「publishされる内容（コミット済み）」、`step-diff`＝「これからcommitされる内容（未コミット）」と区別して出すとよい
 ## 契約への提案
-なし（E10で出した「未コミット一覧の基準をブランチ先頭に」は契約eca2e00で採用され、実装済み）
+なし
