@@ -197,15 +197,15 @@ type Problem struct {
 // available to exec nodes' environment (settings.json `checks`); kept for
 // parity with the previous engine and may be empty. Returns all problems
 // found, nil when the set is runnable.
-func (s *Set) Check(root string) []Problem { panic(ErrNotImplemented) }
+func (s *Set) Check(root string) []Problem { return s.check(root) }
 
 // Reachable lists the reference paths root transitively uses, for
 // snapshotting.
-func (s *Set) Reachable(root string) ([]string, error) { return nil, ErrNotImplemented }
+func (s *Set) Reachable(root string) ([]string, error) { return s.reachable(root) }
 
 // Mermaid renders root with the engine's own interrupts (triage, deviation)
 // drawn in, so what is shown is what runs.
-func (s *Set) Mermaid(root string) (string, error) { return "", ErrNotImplemented }
+func (s *Set) Mermaid(root string) (string, error) { return s.mermaid(root) }
 
 // ---------------------------------------------------------------------------
 // Runtime: what the engine asks of its host
