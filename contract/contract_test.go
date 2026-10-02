@@ -776,9 +776,19 @@ func TestCE5_ForeachStepsCommitDeviationPublish(t *testing.T) {
 		t.Fatalf("want 2 step commits, got %d (calls %v)", st.count("Commit(step"), st.calls)
 	}
 	_ = e.ReportResult(ctx, run, rv.Occurrence, "done", "")
+	// Before the review gate opens, leave something uncommitted in the tree:
+	// the gate must decide on the committed diff and merely list this.
+	st.changed = []string{"scratch.txt"}
 	s = advance(t, e, run)
 	if s.Kind != engine.StatusGate || s.Gate.Gate != "review" || s.Gate.Target != "diff" {
 		t.Fatalf("want review gate on diff, got %+v", s)
+	}
+	if !st.has("Diff(committed-diff)") {
+		t.Fatalf("a target: diff approval decides on the committed diff (DiffCommitted), calls=%v", st.calls)
+	}
+	subj := string(s.Gate.Subject)
+	if !strings.HasPrefix(subj, "--- a") || !strings.Contains(subj, "publishされない") || !strings.Contains(subj, "scratch.txt") {
+		t.Fatalf("subject must be the committed diff followed by the uncommitted files under a 'publishされない' heading:\n%s", subj)
 	}
 	_ = e.Decide(ctx, run, s.Occurrence, engine.Decision{Outcome: "approved", TargetHash: s.Gate.TargetHash})
 	s = advance(t, e, run)
