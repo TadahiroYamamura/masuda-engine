@@ -116,6 +116,49 @@ func TestToolsForms(t *testing.T) {
 	}
 }
 
+func TestAgentModelAndEffort(t *testing.T) {
+	load := func(front string) (*Set, error) {
+		md := "---\nname: a\ndescription: d\n" + front + "outcomes:\n  done: d\n---\nbody\n"
+		return Load(mapFS(map[string]string{"agents/a.md": md}), nil)
+	}
+	t.Run("frontmatterのmodelとeffortがそのままAgentに入る", func(t *testing.T) {
+		for _, effort := range []string{"low", "medium", "high", "xhigh", "max"} {
+			for _, model := range []string{"sonnet", "claude-opus-4-5", "inherit"} {
+				set, err := load("model: " + model + "\neffort: " + effort + "\n")
+				if err != nil {
+					t.Fatalf("model %q effort %q: %v", model, effort, err)
+				}
+				if a := set.Agents["a"]; a.Model != model || a.Effort != effort {
+					t.Fatalf("model %q effort %q: got %q %q", model, effort, a.Model, a.Effort)
+				}
+			}
+		}
+	})
+	t.Run("modelとeffortを書かない役はどちらも空文字列のまま", func(t *testing.T) {
+		set, err := load("")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if a := set.Agents["a"]; a.Model != "" || a.Effort != "" {
+			t.Fatalf("got %q %q", a.Model, a.Effort)
+		}
+	})
+	t.Run("受け付けないeffortは拒否し、受け付ける値をメッセージに並べる", func(t *testing.T) {
+		for _, bad := range []string{"High", "minimal", "\"\"", "[low]"} {
+			_, err := load("effort: " + bad + "\n")
+			if err == nil || !strings.Contains(err.Error(), "effort:") || !strings.Contains(err.Error(), "low, medium, high, xhigh, max") {
+				t.Fatalf("effort %s: err = %v", bad, err)
+			}
+		}
+	})
+	t.Run("空のmodelは拒否する", func(t *testing.T) {
+		_, err := load("model: \"\"\n")
+		if err == nil || !strings.Contains(err.Error(), "model:") {
+			t.Fatalf("err = %v", err)
+		}
+	})
+}
+
 // TestBundledSchemas pins the shapes the contract tests feed the engine.
 // Text data (commit-message) is validated as one JSON string.
 func TestBundledSchemas(t *testing.T) {

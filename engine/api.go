@@ -146,6 +146,8 @@ type Agent struct {
 	Inputs      []string
 	Outputs     []string
 	Outcomes    map[string]string // outcome -> description; must contain done
+	Model       string            // "" = the Runner's default; passed through uninterpreted
+	Effort      string            // "" = the Runner's default; low, medium, high, xhigh or max
 	Body        string            // the prompt
 }
 
