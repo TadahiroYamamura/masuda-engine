@@ -49,9 +49,8 @@ func checkCommentManifest(t *testing.T, i int, task *AgentTask) {
 }
 
 // TestBundledDevelopReviewsInOneSessionPerRole walks the bundled develop
-// with three steps: the first step's interim review is clean and goes
-// straight to its commit, the second goes through one fix and recheck, the
-// third has nothing the fixer may fix. The final review's clean still passes
+// with three steps, each going straight from its implementer through the
+// test to its commit. The final review's clean still passes
 // the checker, which sends it back once; the fixer's cannot_fix hands the
 // rest to the report. After a rework, a clean review with nothing to fix
 // skips the recheck. Every implementer, the rework included, reads the
@@ -62,7 +61,7 @@ func TestBundledDevelopReviewsInOneSessionPerRole(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, gone := range []string{"workflows/fix-finding", "workflows/review/perspective-review"} {
+	for _, gone := range []string{"workflows/fix-finding", "workflows/review/perspective-review", "workflows/implement/interim-review"} {
 		if _, ok := set.Workflows[gone]; ok {
 			t.Fatalf("%s is no longer bundled", gone)
 		}
@@ -111,16 +110,8 @@ func TestBundledDevelopReviewsInOneSessionPerRole(t *testing.T) {
 		{"workflows/develop/revise", "done"},
 		{"gate:plan", "approved"},
 		{"workflows/implement/build-step/implement", "done"},
-		{"workflows/implement/interim-review/interim-review", "clean"},
 		{"workflows/implement/build-step/implement", "done"},
-		{"workflows/implement/interim-review/interim-review", "done"},
-		{"workflows/implement/interim-review/interim-check", "done"},
-		{"workflows/implement/build-step/fix", "done"},
-		{"workflows/implement/build-step/recheck", "done"},
 		{"workflows/implement/build-step/implement", "done"},
-		{"workflows/implement/interim-review/interim-review", "done"},
-		{"workflows/implement/interim-review/interim-check", "done"},
-		{"workflows/implement/build-step/fix", "nothing_to_fix"},
 		{"workflows/review/perspectives/review", "clean"},
 		{"workflows/review/perspectives/check-review", "inaccurate"},
 		{"workflows/review/perspectives/review", "done"},
@@ -168,11 +159,6 @@ func TestBundledDevelopReviewsInOneSessionPerRole(t *testing.T) {
 		checkCommentManifest(t, i, s.Task)
 		if s.Task.Agent.Name == "implementer" {
 			lastImpl = s.Occurrence
-		}
-		if s.Task.Node == "interim-review" || s.Task.Node == "interim-check" {
-			if in := s.Task.Inputs["diff"]; in.Name != "step-diff" {
-				t.Fatalf("step %d: the interim review must read the step diff as diff, got %+v", i, in)
-			}
 		}
 		if err := e.ReportResult(ctx, "r", s.Occurrence, want.outcome, ""); err != nil {
 			t.Fatalf("step %d (%s): %v", i, want.at, err)
@@ -303,14 +289,15 @@ func TestBundledFixPlansInOneSessionAndPublishes(t *testing.T) {
 	}
 }
 
-// TestBundledBuildStepDisputeEndsAtInterimGate は、fixerが2件の指摘に反論し、
-// recheckerが1件（f1）の反論を認めて取り下げつつ、もう1件（f2）を維持して
-// unresolvedで返す1ステップを歩かせる。取り下げはunresolvedの報告でも保存され、
-// 次のfixerの台帳からf1が消えている。fixerがf2に反論し続け、recheckerが
-// 維持し続けるので、3回の修正の後、4回目の進入がexhaustedになりinterim
-// ゲートへ渡る。どの修正もそのステップのimplementerに続けて渡され、反論
-// （disputed・response）が指摘の台帳に届く。
-func TestBundledBuildStepDisputeEndsAtInterimGate(t *testing.T) {
+// Test同梱のdevelopの最終の修正で反論が続くと3回でレポートへ進む は、最終
+// レビューの2件の指摘にfixerが反論し、recheckerが1件（f1）の反論を認めて
+// 取り下げつつ、もう1件（f2）を維持してunresolvedで返す経路を歩かせる。
+// 取り下げはunresolvedの報告でも保存され、次のfixerの台帳からf1が消えている。
+// fixerがf2に反論し続け、recheckerが維持し続けるので、3回の修正の後、4回目の
+// 進入がexhaustedになりreview-commitを経てレポートへ渡る。どの修正も最後の
+// ステップのimplementerに続けて渡され、反論（disputed・response）が指摘の
+// 台帳に届く。
+func Test同梱のdevelopの最終の修正で反論が続くと3回でレポートへ進む(t *testing.T) {
 	set, err := Load(nil, Bundled())
 	if err != nil {
 		t.Fatal(err)
@@ -330,6 +317,7 @@ func TestBundledBuildStepDisputeEndsAtInterimGate(t *testing.T) {
 			"plan-checklist":   []byte(emptyChecklist),
 			"findings":         []byte("[" + finding("f1", "") + "," + finding("f2", "") + "]"),
 			"commit-message":   []byte("feat: x"),
+			"report":           []byte("# report"),
 			"comment-manifest": []byte(`[]`),
 		}},
 		items:   []Item{{Key: "1", Input: "step", Content: []byte(`{"number":1,"title":"t1","description":"a","tests":[],"files":["a.go"]}`)}},
@@ -348,16 +336,16 @@ func TestBundledBuildStepDisputeEndsAtInterimGate(t *testing.T) {
 		{"workflows/develop/revise", "done"},
 		{"gate:plan", "approved"},
 		{"workflows/implement/build-step/implement", "done"},
-		{"workflows/implement/interim-review/interim-review", "done"},
-		{"workflows/implement/interim-review/interim-check", "done"},
-		{"workflows/implement/build-step/fix", "done"},
-		{"workflows/implement/build-step/recheck", "unresolved"},
-		{"workflows/implement/build-step/fix", "done"},
-		{"workflows/implement/build-step/recheck", "unresolved"},
-		{"workflows/implement/build-step/fix", "done"},
-		{"workflows/implement/build-step/recheck", "unresolved"},
-		{"gate:interim", "approved"},
-		{"workflows/review/perspectives/review", "clean"},
+		{"workflows/review/perspectives/review", "done"},
+		{"workflows/review/perspectives/check-review", "done"},
+		{"workflows/review/cross-cutting/explore", "none_found"},
+		{"workflows/develop/fix", "done"},
+		{"workflows/develop/recheck", "unresolved"},
+		{"workflows/develop/fix", "done"},
+		{"workflows/develop/recheck", "unresolved"},
+		{"workflows/develop/fix", "done"},
+		{"workflows/develop/recheck", "unresolved"},
+		{"workflows/develop/report", "done"},
 	}
 	var lastImpl, fixOcc string
 	fixes, rechecks := 0, 0
@@ -424,6 +412,9 @@ func TestBundledBuildStepDisputeEndsAtInterimGate(t *testing.T) {
 	}
 	if fixes != 3 || rechecks != 3 {
 		t.Fatalf("want three fixes and three rechecks, got %d and %d", fixes, rechecks)
+	}
+	if g := mustAdvance(t, e); g.Kind != StatusGate || g.Gate.Gate != "review" {
+		t.Fatalf("want the review gate, got %+v", g)
 	}
 }
 
