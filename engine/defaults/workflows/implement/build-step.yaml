@@ -30,6 +30,7 @@ nodes:
     max: 3
     next:
       done: recheck
+      nothing_to_fix: commit
       cannot_fix: approve-interim
       exhausted: approve-interim
   recheck:

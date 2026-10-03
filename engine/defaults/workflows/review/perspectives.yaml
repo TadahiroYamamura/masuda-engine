@@ -8,7 +8,7 @@ nodes:
     max: 3
     next:
       done: check-review
-      clean: end:clean
+      clean: check-review
       exhausted: end
   check-review:
     type: agent

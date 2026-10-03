@@ -2,15 +2,15 @@
 ## 作業項目
 同梱のレビュー工程を「観点ごとにセッションを起動する」形から「役割ごとに1セッションで全観点・全指摘を回す」形に組み替えた（quickstart実走で観点レビューが9分16秒かかったことへの対処）。engineの実行ロジックは変えず、同梱の定義だけを変えた。
 
-- `workflows/review/perspectives`: `review`（reviewer、max 3）→`check-review`（review-checker、`inaccurate`で`review`へ）。`clean`（指摘0件）は`end:clean`、reviewerの`exhausted`は`end`
-- `workflows/implement/interim-review`（新規）: 同じ構造でノード名が`interim-review`・`interim-check`。build-stepから`with: {diff: step-diff}`で呼ぶ
-- `workflows/develop`: `review`→`cross-cutting`→`fix`（fixer、max 3）→`recheck`（rechecker、`unresolved`で`fix`へ）→`review-commit`→`report`→… fixerの`cannot_fix`・`exhausted`とrecheckerの`exhausted`は`review-commit`へ
-- `workflows/implement/build-step`: `implement`→`test`→`review`（interim-review）→`fix`→`recheck`→`commit`。`review`の`clean`は`commit`へ直結。fixerの`cannot_fix`・`exhausted`とrecheckerの`exhausted`は`approve-interim`へ
+- `workflows/review/perspectives`: `review`（reviewer、max 3）→`check-review`（review-checker、`inaccurate`で`review`へ）。reviewerの`clean`（指摘0件）も`check-review`へ通して見落としを確かめる。checkerの`clean`は`end:clean`、reviewerの`exhausted`は`end`
+- `workflows/implement/interim-review`（新規）: 同じ構造でノード名が`interim-review`・`interim-check`。ただしreviewerの`clean`はcheckerを経ずに`end:clean`（見逃しは最終レビューで拾う）。build-stepから`with: {diff: step-diff}`で呼ぶ
+- `workflows/develop`: `review`→`cross-cutting`→`fix`（fixer、max 3）→`recheck`（rechecker、`unresolved`で`fix`へ）→`review-commit`→`report`→… fixerの`nothing_to_fix`・`cannot_fix`・`exhausted`とrecheckerの`exhausted`は`review-commit`へ
+- `workflows/implement/build-step`: `implement`→`test`→`review`（interim-review）→`fix`→`recheck`→`commit`。`review`の`clean`とfixerの`nothing_to_fix`は`commit`へ直結。fixerの`cannot_fix`・`exhausted`とrecheckerの`exhausted`は`approve-interim`へ
 - `workflows/review`（review-only）: `review`（perspectives）→`cross-cutting`→`report`→`cleanup`。fix・recheckは置いていない（承認済み計画が無いので書き込めるエージェントに到達できない）
-- エージェント: reviewer（入力`[diff]`、全観点を順に当てる、ノード名`interim-`で途中レビューと判別し`trigger`で観点を飛ばす、`clean`を追加）、review-checker（入力`[diff, findings]`、直前の出現の指摘を全観点まとめて検証、`clean`を追加）、fixer（入力`[findings]`、一括修正、直せない指摘を`id`付きで列挙して`cannot_fix`）、rechecker（入力`[findings, step-diff]`、未解決を`id`付きで列挙して`unresolved`）
+- エージェント: reviewer（入力`[diff]`、全観点を順に当てる、ノード名`interim-`で途中レビューと判別し`trigger`で観点を飛ばす、`clean`を追加）、review-checker（入力`[diff, findings]`、直前の出現の指摘を全観点まとめて検証、`clean`を追加）、fixer（入力`[findings]`、一括修正、直せない指摘を`id`付きで列挙して`cannot_fix`、対象が0件なら`nothing_to_fix`）、rechecker（入力`[findings, step-diff]`、未解決を`id`付きで列挙して`unresolved`）
 - 削除: `workflows/review/perspective-review`、`workflows/fix-finding`、`agents/trigger-matcher`
 ## 完了した契約テスト
-C-E1〜C-E7すべて緑（`go test -count=1 ./...`）。`go vet ./...`指摘なし。`engine/bundled_test.go`に、同梱のdevelopを2ステップで歩かせ、途中レビューの`clean`直結・fix→recheck経路・最終レビューの差し戻し・fixerの`cannot_fix`からreportへの経路と、途中レビューのreviewerが`diff`として`step-diff`を受け取ることを確かめるテストを足した
+C-E1〜C-E7すべて緑（`go test -count=1 ./...`）。`go vet ./...`指摘なし。`engine/bundled_test.go`に、同梱のdevelopを3ステップとrework1周で歩かせ、途中レビューの`clean`直結・fix→recheck経路・途中の`nothing_to_fix`直結・最終レビューの`clean`がcheckerを通る経路と差し戻し・fixerの`cannot_fix`からreportへの経路・rework後の`nothing_to_fix`でrecheckを飛ばす経路と、途中レビューのreviewerが`diff`として`step-diff`を受け取ることを確かめるテストを足した
 ## 未完と理由
 - `schemas/selected-perspectives.json`は削除しなかった。`docs/workflow-schema.md`（契約）が同梱スキーマとして列挙しており、`perspectives(from=<node>)`がそのデータを前提にしているため
 ## 次の一手
@@ -22,8 +22,8 @@ C-E1〜C-E7すべて緑（`go test -count=1 ./...`）。`go vet ./...`指摘な�
   - quickstartの工程説明（観点ごとのペアが14個並ぶ前提の説明があれば直す）
   - `go.mod`のengineの版上げ（`go get github.com/TadahiroYamamura/masuda-engine@<tagまたはmain> && go mod tidy`）
 - reviewerはタスクの「実行位置」のノード名（`interim-`で始まるか）で途中レビューかを判別する。masudaの`internal/runner/task.go`が「実行位置: ワークフロー…のノード…」を出していることに依存する
-- reviewerの`clean`はcheckerを経ずに終わる（指摘0件の典型経路を1セッションで抜けるため）。見落とし検査が要るなら`clean: check-review`に変えればよい
-- developのfix・recheckは、指摘0件でも1回ずつ起動する（cross-cuttingは変更しない指示だったため）。飛ばすならfixerに「対象なし」の終わり方を足すか、cross-cuttingに`clean`相当の終わり方を足す
+- reviewerの`clean`は、最終レビューではcheckerを通し（指摘0件のときの見落とし検査の唯一の機会）、途中レビューではcheckerを経ずに終わる
+- developのfixは、横断チェックまで指摘0件でもfixerを1回起動するが、fixerが`nothing_to_fix`で終わればrecheckは起動しない
 - fixer・recheckerの対象は「`autofix: true`で現在のコードに問題が残っているもの」。台帳に前のステップで直した指摘も残るため、現在のコードを読んで判断させている
 - `max`はフレームの直前の人間の判断から数えるので、developの`fix`・`recheck`はreworkの周回ごとに数え直される
 - contractのC-E7は`*/selected-perspectives`の出力を用意しているが、もう使われない（無害なので触っていない）

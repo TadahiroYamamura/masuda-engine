@@ -17,10 +17,12 @@ func (r *bundledRunner) RunCommand(context.Context, CommandTask) (CommandResult,
 func (r *bundledRunner) Publish(context.Context, PublishRequest) error { r.published++; return nil }
 
 // TestBundledDevelopReviewsInOneSessionPerRole walks the bundled develop
-// with two steps: the first step's interim review is clean and goes straight
-// to its commit, the second step's goes through one fix and recheck. The
-// final review is sent back once by the checker, and the fixer's cannot_fix
-// hands the rest to the report.
+// with three steps: the first step's interim review is clean and goes
+// straight to its commit, the second goes through one fix and recheck, the
+// third has nothing the fixer may fix. The final review's clean still passes
+// the checker, which sends it back once; the fixer's cannot_fix hands the
+// rest to the report. After a rework, a clean review with nothing to fix
+// skips the recheck.
 func TestBundledDevelopReviewsInOneSessionPerRole(t *testing.T) {
 	set, err := Load(nil, Bundled())
 	if err != nil {
@@ -41,7 +43,7 @@ func TestBundledDevelopReviewsInOneSessionPerRole(t *testing.T) {
 		t.Fatalf("Check review: %+v", p)
 	}
 
-	plan := `{"goal":"g","summary":"s","steps":[{"number":1,"title":"t1","description":"a","tests":[],"files":["a.go"]},{"number":2,"title":"t2","description":"b","tests":[],"files":["a.go"]}],"alternatives":[],"risks":[],"expected_byproducts":[]}`
+	plan := `{"goal":"g","summary":"s","steps":[{"number":1,"title":"t1","description":"a","tests":[],"files":["a.go"]},{"number":2,"title":"t2","description":"b","tests":[],"files":["a.go"]},{"number":3,"title":"t3","description":"c","tests":[],"files":["a.go"]}],"alternatives":[],"risks":[],"expected_byproducts":[]}`
 	r := &bundledRunner{e5Runner: e5Runner{
 		fakeRunner: fakeRunner{data: map[string][]byte{"/instructions": []byte("x")}, outputs: map[string][]byte{
 			"investigation":            []byte("i"),
@@ -54,6 +56,7 @@ func TestBundledDevelopReviewsInOneSessionPerRole(t *testing.T) {
 		items: []Item{
 			{Key: "1", Input: "step", Content: []byte(`{"number":1,"title":"t1","description":"a","tests":[],"files":["a.go"]}`)},
 			{Key: "2", Input: "step", Content: []byte(`{"number":2,"title":"t2","description":"b","tests":[],"files":["a.go"]}`)},
+			{Key: "3", Input: "step", Content: []byte(`{"number":3,"title":"t3","description":"c","tests":[],"files":["a.go"]}`)},
 		},
 		changed: []string{"a.go"},
 	}}
@@ -75,7 +78,11 @@ func TestBundledDevelopReviewsInOneSessionPerRole(t *testing.T) {
 		{"workflows/implement/interim-review/interim-check", "done"},
 		{"workflows/implement/build-step/fix", "done"},
 		{"workflows/implement/build-step/recheck", "done"},
-		{"workflows/review/perspectives/review", "done"},
+		{"workflows/implement/build-step/implement", "done"},
+		{"workflows/implement/interim-review/interim-review", "done"},
+		{"workflows/implement/interim-review/interim-check", "done"},
+		{"workflows/implement/build-step/fix", "nothing_to_fix"},
+		{"workflows/review/perspectives/review", "clean"},
 		{"workflows/review/perspectives/check-review", "inaccurate"},
 		{"workflows/review/perspectives/review", "done"},
 		{"workflows/review/perspectives/check-review", "done"},
@@ -83,6 +90,13 @@ func TestBundledDevelopReviewsInOneSessionPerRole(t *testing.T) {
 		{"workflows/develop/fix", "done"},
 		{"workflows/develop/recheck", "unresolved"},
 		{"workflows/develop/fix", "cannot_fix"},
+		{"workflows/develop/report", "done"},
+		{"gate:review", "rejected"},
+		{"workflows/develop/rework", "done"},
+		{"workflows/review/perspectives/review", "clean"},
+		{"workflows/review/perspectives/check-review", "clean"},
+		{"workflows/review/cross-cutting/explore", "none_found"},
+		{"workflows/develop/fix", "nothing_to_fix"},
 		{"workflows/develop/report", "done"},
 		{"gate:review", "approved"},
 	}
@@ -122,7 +136,7 @@ func TestBundledDevelopReviewsInOneSessionPerRole(t *testing.T) {
 	for _, c := range r.commits {
 		scopes = append(scopes, c.Scope)
 	}
-	if !slices.Equal(scopes, []string{"step", "step", "plan"}) {
-		t.Fatalf("want two step commits and the review commit, got %v", scopes)
+	if !slices.Equal(scopes, []string{"step", "step", "step", "plan", "plan", "plan"}) {
+		t.Fatalf("want three step commits, the review commit, the rework commit and the second review commit, got %v", scopes)
 	}
 }

@@ -44,6 +44,7 @@ nodes:
     max: 3
     next:
       done: recheck
+      nothing_to_fix: review-commit
       cannot_fix: review-commit
       exhausted: review-commit
   recheck:
