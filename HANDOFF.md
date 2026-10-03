@@ -1,19 +1,32 @@
 # HANDOFF
 ## 作業項目
-同梱の計画スキーマ`plan`の構造化（masudaの`gate show`で計画を読みやすく出すための前提）。`plan.json`に`goal`・`steps[].title`・`steps[].tests`・`alternatives[]`・`risks[]`を足し、`planner.md`の書き方の指示を「goal→人間が認識できる単位のステップ→description・tests→files」の分解に書き直した。`docs/workflow-schema.md`の同梱スキーマの記述も合わせた
+同梱のレビュー工程を「観点ごとにセッションを起動する」形から「役割ごとに1セッションで全観点・全指摘を回す」形に組み替えた（quickstart実走で観点レビューが9分16秒かかったことへの対処）。engineの実行ロジックは変えず、同梱の定義だけを変えた。
 
-続けて`implementer.md`の冒頭（`step`だけを実装する段落の後ろ）に、ステップの`tests`に挙がったテストもそのステップで書いて自分で通すこと、テストのコードはステップの`files`に挙がっているファイルに置くこと、の2文を足した（plannerの「実装とそのテストは同じステップ、テストファイルもfilesに挙げる」方針と対になる）
+- `workflows/review/perspectives`: `review`（reviewer、max 3）→`check-review`（review-checker、`inaccurate`で`review`へ）。`clean`（指摘0件）は`end:clean`、reviewerの`exhausted`は`end`
+- `workflows/implement/interim-review`（新規）: 同じ構造でノード名が`interim-review`・`interim-check`。build-stepから`with: {diff: step-diff}`で呼ぶ
+- `workflows/develop`: `review`→`cross-cutting`→`fix`（fixer、max 3）→`recheck`（rechecker、`unresolved`で`fix`へ）→`review-commit`→`report`→… fixerの`cannot_fix`・`exhausted`とrecheckerの`exhausted`は`review-commit`へ
+- `workflows/implement/build-step`: `implement`→`test`→`review`（interim-review）→`fix`→`recheck`→`commit`。`review`の`clean`は`commit`へ直結。fixerの`cannot_fix`・`exhausted`とrecheckerの`exhausted`は`approve-interim`へ
+- `workflows/review`（review-only）: `review`（perspectives）→`cross-cutting`→`report`→`cleanup`。fix・recheckは置いていない（承認済み計画が無いので書き込めるエージェントに到達できない）
+- エージェント: reviewer（入力`[diff]`、全観点を順に当てる、ノード名`interim-`で途中レビューと判別し`trigger`で観点を飛ばす、`clean`を追加）、review-checker（入力`[diff, findings]`、直前の出現の指摘を全観点まとめて検証、`clean`を追加）、fixer（入力`[findings]`、一括修正、直せない指摘を`id`付きで列挙して`cannot_fix`）、rechecker（入力`[findings, step-diff]`、未解決を`id`付きで列挙して`unresolved`）
+- 削除: `workflows/review/perspective-review`、`workflows/fix-finding`、`agents/trigger-matcher`
 ## 完了した契約テスト
-C-E1〜C-E7すべて緑（`go test -count=1 ./...`）。`go vet ./...`指摘なし。テストのfixtureの計画はすべて新スキーマに直し、`TestBundledSchemas`に新項目の必須・`additionalProperties`の検査と、旧スキーマの計画が拒否されることの検査を足した
+C-E1〜C-E7すべて緑（`go test -count=1 ./...`）。`go vet ./...`指摘なし。`engine/bundled_test.go`に、同梱のdevelopを2ステップで歩かせ、途中レビューの`clean`直結・fix→recheck経路・最終レビューの差し戻し・fixerの`cannot_fix`からreportへの経路と、途中レビューのreviewerが`diff`として`step-diff`を受け取ることを確かめるテストを足した
 ## 未完と理由
-なし
+- `schemas/selected-perspectives.json`は削除しなかった。`docs/workflow-schema.md`（契約）が同梱スキーマとして列挙しており、`perspectives(from=<node>)`がそのデータを前提にしているため
 ## 次の一手
-- masuda側で`go.mod`のengineをこの版に上げる（タグを打つかmainへpushした後に`go get github.com/TadahiroYamamura/masuda-engine@<tagまたはmain> && go mod tidy`）。それまでmasudaは`go.work`経由でしか新スキーマを使えない
-- 実機1周で、plannerが新スキーマの計画（特にtitleが機能単位になり、テストファイルがfilesに入るか）を書けるか、implementerが`tests`のテストを同じステップで書くかを確かめる
+- masuda側で`go.mod`のengineをこの版に上げる
+- 実機1周（quickstart）で、レビュー工程の所要時間と、1セッションで全観点を回したときの指摘の質（観点の取りこぼし、`id`の形）を確かめる
 ## 注意点
-- `engine/commit.go`の`planDoc`/`stepDoc`は変えていない。読むのは`summary`・`steps[].description`・`files`・`expected_byproducts`だけで、新しい項目は無視される。commitメッセージの代替は従来どおり`description`
-- `alternatives`・`risks`は必須（空配列可）、`steps[].tests`も必須（空配列可）。キーの書き忘れはスキーマ検証で落ちてplannerに差し戻される
-- 旧スキーマの計画（既存ワークスペースの記録）は新スキーマでは検証に通らない。エンジンが記録済みの計画を再検証する経路は無いので、再開中のrunには影響しないはず（再開後に計画を書き直す場合は新スキーマが要る）
-- `implementer.md`は`tests`の扱い（このステップで書いて通す、置き場所は`files`の中）だけを足した。`files`以外は触らないという指示はそのまま
+- masuda側で追随が要るもの:
+  - `docs/user/workflows.md`のワークフロー図（観点ごとのforeach・trigger-matcher・fix-findingの記述を、reviewer→checker→fixer→recheckerに）
+  - quickstartの工程説明（観点ごとのペアが14個並ぶ前提の説明があれば直す）
+  - `go.mod`のengineの版上げ（`go get github.com/TadahiroYamamura/masuda-engine@<tagまたはmain> && go mod tidy`）
+- reviewerはタスクの「実行位置」のノード名（`interim-`で始まるか）で途中レビューかを判別する。masudaの`internal/runner/task.go`が「実行位置: ワークフロー…のノード…」を出していることに依存する
+- reviewerの`clean`はcheckerを経ずに終わる（指摘0件の典型経路を1セッションで抜けるため）。見落とし検査が要るなら`clean: check-review`に変えればよい
+- developのfix・recheckは、指摘0件でも1回ずつ起動する（cross-cuttingは変更しない指示だったため）。飛ばすならfixerに「対象なし」の終わり方を足すか、cross-cuttingに`clean`相当の終わり方を足す
+- fixer・recheckerの対象は「`autofix: true`で現在のコードに問題が残っているもの」。台帳に前のステップで直した指摘も残るため、現在のコードを読んで判断させている
+- `max`はフレームの直前の人間の判断から数えるので、developの`fix`・`recheck`はreworkの周回ごとに数え直される
+- contractのC-E7は`*/selected-perspectives`の出力を用意しているが、もう使われない（無害なので触っていない）
+- `docs/work-orders.md`の旧記述（trigger-matcher・fix-finding）は経緯としてそのまま
 ## 契約への提案
-なし。`docs/workflow-schema.md`は同梱スキーマの列挙の1行だけを、監督の指示に従って新スキーマに合わせた
+- `docs/workflow-schema.md`の同梱スキーマの列挙から`selected-perspectives`を外すかどうか。外すなら`schemas/selected-perspectives.json`を削除でき、`perspectives(from=<node>)`を使うユーザー定義のワークフローは自前のスキーマを置く（無ければ空でないことだけ検証される）。残すなら現状のまま
