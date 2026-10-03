@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "plan-checklist",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["claims", "sets", "items", "not_covered"],
+  "properties": {
+    "claims": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["text", "source"],
+        "properties": {
+          "text": {"type": "string", "pattern": "\\S"},
+          "source": {"enum": ["instructions", "plan"]}
+        }
+      }
+    },
+    "sets": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "members"],
+        "properties": {
+          "name": {"type": "string", "pattern": "\\S"},
+          "members": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["target", "handling"],
+              "properties": {
+                "target": {"type": "string", "pattern": "\\S"},
+                "handling": {"type": "string", "pattern": "\\S"}
+              }
+            }
+          }
+        }
+      }
+    },
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "category", "question", "reason", "hint"],
+        "properties": {
+          "id": {"type": "string", "pattern": "^[A-Z]+-[1-9][0-9]*$"},
+          "category": {"enum": ["spec", "security", "data", "release", "regression", "performance", "maintainability", "other"]},
+          "question": {"type": "string", "pattern": "\\S"},
+          "reason": {"type": "string", "pattern": "\\S"},
+          "hint": {"type": "string", "pattern": "\\S"}
+        }
+      }
+    },
+    "not_covered": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["scope", "reason"],
+        "properties": {
+          "scope": {"type": "string", "pattern": "\\S"},
+          "reason": {"type": "string", "pattern": "\\S"}
+        }
+      }
+    }
+  }
+}

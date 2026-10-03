@@ -42,6 +42,7 @@ func checkContinues(t *testing.T, i int, task *AgentTask, lastImpl string) {
 // rest to the report. After a rework, a clean review with nothing to fix
 // skips the recheck. Every implementer, the rework included, reads the
 // investigation.
+// 計画への問いにはplan-reviserが答えきり、そのままplanゲートへ進む。
 func TestBundledDevelopReviewsInOneSessionPerRole(t *testing.T) {
 	set, err := Load(nil, Bundled())
 	if err != nil {
@@ -62,11 +63,12 @@ func TestBundledDevelopReviewsInOneSessionPerRole(t *testing.T) {
 		t.Fatalf("Check review: %+v", p)
 	}
 
-	plan := `{"goal":"g","summary":"s","steps":[{"number":1,"title":"t1","description":"a","tests":[],"files":["a.go"]},{"number":2,"title":"t2","description":"b","tests":[],"files":["a.go"]},{"number":3,"title":"t3","description":"c","tests":[],"files":["a.go"]}],"alternatives":[],"risks":[],"expected_byproducts":[]}`
+	plan := `{"goal":"g","summary":"s","steps":[{"number":1,"title":"t1","description":"a","tests":[],"files":["a.go"]},{"number":2,"title":"t2","description":"b","tests":[],"files":["a.go"]},{"number":3,"title":"t3","description":"c","tests":[],"files":["a.go"]}],"alternatives":[],"risks":[],"expected_byproducts":[],"checks":[]}`
 	r := &bundledRunner{e5Runner: e5Runner{
 		fakeRunner: fakeRunner{data: map[string][]byte{"/instructions": []byte("x")}, outputs: map[string][]byte{
 			"investigation":            []byte("i"),
 			"plan":                     []byte(plan),
+			"plan-checklist":           []byte(emptyChecklist),
 			"findings":                 []byte(`[]`),
 			"cross-cutting-candidates": []byte(`[]`),
 			"report":                   []byte("# report"),
@@ -90,6 +92,8 @@ func TestBundledDevelopReviewsInOneSessionPerRole(t *testing.T) {
 	script := []step{
 		{"workflows/develop/investigate", "done"},
 		{"workflows/develop/plan", "done"},
+		{"workflows/develop/questions", "done"},
+		{"workflows/develop/revise", "done"},
 		{"gate:plan", "approved"},
 		{"workflows/implement/build-step/implement", "done"},
 		{"workflows/implement/interim-review/interim-review", "clean"},
@@ -201,7 +205,7 @@ func TestBundledFixPlansInOneSessionAndPublishes(t *testing.T) {
 		t.Fatalf("Check fix: %+v", p)
 	}
 
-	plan := `{"goal":"g","summary":"s","steps":[{"number":1,"title":"t1","description":"a","tests":["x"],"files":["a.go"]}],"alternatives":[],"risks":[],"expected_byproducts":[]}`
+	plan := `{"goal":"g","summary":"s","steps":[{"number":1,"title":"t1","description":"a","tests":["x"],"files":["a.go"]}],"alternatives":[],"risks":[],"expected_byproducts":[],"checks":[]}`
 	r := &bundledRunner{e5Runner: e5Runner{
 		fakeRunner: fakeRunner{data: map[string][]byte{"/instructions": []byte("x")}, outputs: map[string][]byte{
 			"investigation":  []byte("i"),
@@ -296,7 +300,7 @@ func TestBundledBuildStepDisputeEndsAtInterimGate(t *testing.T) {
 	if p := set.Check("workflows/develop"); len(p) != 0 {
 		t.Fatalf("Check develop: %+v", p)
 	}
-	plan := `{"goal":"g","summary":"s","steps":[{"number":1,"title":"t1","description":"a","tests":[],"files":["a.go"]}],"alternatives":[],"risks":[],"expected_byproducts":[]}`
+	plan := `{"goal":"g","summary":"s","steps":[{"number":1,"title":"t1","description":"a","tests":[],"files":["a.go"]}],"alternatives":[],"risks":[],"expected_byproducts":[],"checks":[]}`
 	finding := func(id, extra string) string {
 		return `{"id":"` + id + `","file":"a.go","line":3,"severity":"中","autofix":true,"message":"m"` + extra + `}`
 	}
@@ -305,6 +309,7 @@ func TestBundledBuildStepDisputeEndsAtInterimGate(t *testing.T) {
 		fakeRunner: fakeRunner{data: map[string][]byte{"/instructions": []byte("x")}, outputs: map[string][]byte{
 			"investigation":  []byte("i"),
 			"plan":           []byte(plan),
+			"plan-checklist": []byte(emptyChecklist),
 			"findings":       []byte("[" + finding("f1", "") + "," + finding("f2", "") + "]"),
 			"commit-message": []byte("feat: x"),
 		}},
@@ -320,6 +325,8 @@ func TestBundledBuildStepDisputeEndsAtInterimGate(t *testing.T) {
 	script := []step{
 		{"workflows/develop/investigate", "done"},
 		{"workflows/develop/plan", "done"},
+		{"workflows/develop/questions", "done"},
+		{"workflows/develop/revise", "done"},
 		{"gate:plan", "approved"},
 		{"workflows/implement/build-step/implement", "done"},
 		{"workflows/implement/interim-review/interim-review", "done"},
@@ -398,5 +405,144 @@ func TestBundledBuildStepDisputeEndsAtInterimGate(t *testing.T) {
 	}
 	if fixes != 3 || rechecks != 3 {
 		t.Fatalf("want three fixes and three rechecks, got %d and %d", fixes, rechecks)
+	}
+}
+
+const emptyChecklist = `{"claims":[],"sets":[],"items":[],"not_covered":[]}`
+
+// TestBundledDevelopAsksOpenChecksBeforeThePlanGate は、計画への問いに
+// plan-reviserが答えきれずneeds_humanで返す経路を歩かせる。openの問いを
+// 載せた計画がplan-interviewerに渡り、人間の答えがrevise-answeredにだけ
+// 入力として届き、答えを反映した計画（checksがaddressed）がplanゲートに出る。
+// 最初のreviseはanswersを読まない。
+func TestBundledDevelopAsksOpenChecksBeforeThePlanGate(t *testing.T) {
+	set, err := Load(nil, Bundled())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p := set.Check("workflows/develop"); len(p) != 0 {
+		t.Fatalf("Check develop: %+v", p)
+	}
+	const steps = `"steps":[{"number":1,"title":"t1","description":"a","tests":[],"files":["a.go"]}],"alternatives":[],"risks":[],"expected_byproducts":[]`
+	plan := `{"goal":"g","summary":"s",` + steps + `,"checks":[]}`
+	openPlan := `{"goal":"g","summary":"s",` + steps + `,"checks":[{"id":"SPEC-1","category":"spec","question":"既存の設定ファイルも読めるか","answer":"旧形式を残すかを決められない","status":"open"},{"id":"DATA-1","category":"data","question":"移行で値が失われないか","answer":"ステップ1で旧値を写す","status":"addressed"}]}`
+	answeredPlan := `{"goal":"g","summary":"s",` + steps + `,"checks":[{"id":"SPEC-1","category":"spec","question":"既存の設定ファイルも読めるか","answer":"人間の答え: 旧形式は読まない","status":"out_of_scope"},{"id":"DATA-1","category":"data","question":"移行で値が失われないか","answer":"ステップ1で旧値を写す","status":"addressed"}]}`
+	checklist := `{"claims":[{"text":"g","source":"plan"}],"sets":[{"name":"設定ファイル","members":[{"target":"a.toml","handling":"ステップ1"}]}],"items":[{"id":"SPEC-1","category":"spec","question":"既存の設定ファイルも読めるか","reason":"a.goのloadが旧形式を読む","hint":"a.go:10"},{"id":"DATA-1","category":"data","question":"移行で値が失われないか","reason":"ステップ1が形式を変える","hint":"a.go:20"}],"not_covered":[]}`
+	r := &bundledRunner{e5Runner: e5Runner{
+		fakeRunner: fakeRunner{data: map[string][]byte{"/instructions": []byte("x")}, outputs: map[string][]byte{
+			"investigation":  []byte("i"),
+			"plan":           []byte(plan),
+			"plan-checklist": []byte(checklist),
+			"answers":        []byte(`{"SPEC-1":"旧形式は読まない"}`),
+		}},
+	}}
+	e := New(set, &kvStore{m: map[string][]byte{}}, r, Options{})
+	ctx := context.Background()
+	if err := e.Start(ctx, "r", "workflows/develop", []string{"instructions"}); err != nil {
+		t.Fatal(err)
+	}
+	type step struct{ at, outcome string }
+	script := []step{
+		{"workflows/develop/investigate", "done"},
+		{"workflows/develop/plan", "done"},
+		{"workflows/develop/questions", "done"},
+		{"workflows/develop/revise", "needs_human"},
+		{"workflows/develop/ask", "done"},
+		{"workflows/develop/revise-answered", "done"},
+	}
+	var planOcc, reviseOcc, askOcc, answeredOcc string
+	for i, want := range script {
+		s := mustAdvance(t, e)
+		if s.Kind != StatusAgent {
+			t.Fatalf("step %d: want %s, got %+v", i, want.at, s)
+		}
+		if at := s.Task.Workflow + "/" + s.Task.Node; at != want.at {
+			t.Fatalf("step %d: want %s, got %s", i, want.at, at)
+		}
+		_, hasAnswers := s.Task.Inputs["answers"]
+		switch s.Task.Node {
+		case "plan":
+			planOcc = s.Occurrence
+		case "questions":
+			if s.Task.Agent.Name != "plan-questions" || s.Task.Inputs["plan"].Occurrence != planOcc {
+				t.Fatalf("step %d: plan-questions must read the planner's plan, got %s %+v", i, s.Task.Agent.Name, s.Task.Inputs)
+			}
+		case "revise":
+			if s.Task.Agent.Name != "plan-reviser" || hasAnswers {
+				t.Fatalf("step %d: the first revise is plan-reviser without answers, got %s %+v", i, s.Task.Agent.Name, s.Task.Inputs)
+			}
+			if _, ok := s.Task.Inputs["plan-checklist"]; !ok {
+				t.Fatalf("step %d: plan-reviser must read the checklist, got %+v", i, s.Task.Inputs)
+			}
+			reviseOcc = s.Occurrence
+			r.outputs["plan"] = []byte(openPlan)
+		case "ask":
+			if s.Task.Agent.Name != "plan-interviewer" || s.Task.Inputs["plan"].Occurrence != reviseOcc {
+				t.Fatalf("step %d: plan-interviewer must read the plan with open checks, got %s %+v", i, s.Task.Agent.Name, s.Task.Inputs)
+			}
+			askOcc = s.Occurrence
+			if err := e.Answer(ctx, "r", s.Occurrence, Answer{Answers: map[string]string{"SPEC-1": "旧形式は読まない"}}); err != nil {
+				t.Fatal(err)
+			}
+		case "revise-answered":
+			if s.Task.Agent.Name != "plan-reviser" {
+				t.Fatalf("step %d: want plan-reviser, got %s", i, s.Task.Agent.Name)
+			}
+			if in := s.Task.Inputs["answers"]; !hasAnswers || in.Occurrence != askOcc {
+				t.Fatalf("step %d: revise-answered must read the human's answers, got %+v", i, s.Task.Inputs)
+			}
+			if in := s.Task.Inputs["plan"]; in.Occurrence != reviseOcc {
+				t.Fatalf("step %d: revise-answered must read the plan with open checks, got %+v", i, in)
+			}
+			answeredOcc = s.Occurrence
+			r.outputs["plan"] = []byte(answeredPlan)
+		}
+		if err := e.ReportResult(ctx, "r", s.Occurrence, want.outcome, ""); err != nil {
+			t.Fatalf("step %d (%s): %v", i, want.at, err)
+		}
+	}
+	if got := string(r.data[askOcc+"/answers"]); !strings.Contains(got, "旧形式は読まない") {
+		t.Fatalf("the human's answers were not stored: %s", got)
+	}
+	g := mustAdvance(t, e)
+	if g.Kind != StatusGate || g.Gate.Gate != "plan" {
+		t.Fatalf("want the plan gate, got %+v", g)
+	}
+	if got := string(r.data[answeredOcc+"/plan"]); !strings.Contains(got, `"out_of_scope"`) || strings.Contains(got, `"open"`) {
+		t.Fatalf("the plan at the gate must carry the answered checks: %s", got)
+	}
+}
+
+// TestBundledPlanChecksSchemas は、計画のchecksと問いのplan-checklistの
+// 同梱スキーマを確かめる。
+func TestBundledPlanChecksSchemas(t *testing.T) {
+	set, err := Load(nil, Bundled())
+	if err != nil {
+		t.Fatal(err)
+	}
+	e := New(set, &kvStore{m: map[string][]byte{}}, &fakeRunner{}, Options{})
+	const steps = `"goal":"g","summary":"s","steps":[{"number":1,"title":"t1","description":"a","tests":[],"files":["a.go"]}],"alternatives":[],"risks":[]`
+	item := `{"id":"SPEC-1","category":"spec","question":"q か","reason":"r","hint":"h"}`
+	cases := []struct {
+		name, data string
+		ok         bool
+	}{
+		{"plan", `{` + steps + `,"checks":[]}`, true},
+		{"plan", `{` + steps + `,"checks":[{"id":"SECURITY-2","category":"security","question":"q","answer":"ステップ1で扱う","status":"addressed"},{"id":"SPEC-1","category":"spec","question":"q","answer":"","status":"open"}]}`, true},
+		{"plan", `{` + steps + `}`, false},
+		{"plan", `{` + steps + `,"checks":[{"id":"SPEC-1","category":"edge","question":"q","answer":"a","status":"addressed"}]}`, false},
+		{"plan", `{` + steps + `,"checks":[{"id":"SPEC-1","category":"spec","question":"q","answer":"a","status":"done"}]}`, false},
+		{"plan", `{` + steps + `,"checks":[{"id":"SPEC-1","category":"spec","question":"q","answer":"","status":"addressed"}]}`, false},
+		{"plan", `{` + steps + `,"checks":[{"id":"spec1","category":"spec","question":"q","answer":"a","status":"addressed"}]}`, false},
+		{"plan-checklist", emptyChecklist, true},
+		{"plan-checklist", `{"claims":[{"text":"c","source":"instructions"}],"sets":[{"name":"n","members":[{"target":"a","handling":"ステップ1"}]}],"items":[` + item + `],"not_covered":[{"scope":"s","reason":"r"}]}`, true},
+		{"plan-checklist", `{"claims":[],"sets":[],"items":[{"id":"SPEC-1","category":"spec","question":"q か","reason":"r","hint":"h","answer":"a"}],"not_covered":[]}`, false},
+		{"plan-checklist", `{"claims":[{"text":"c","source":"review"}],"sets":[],"items":[],"not_covered":[]}`, false},
+		{"plan-checklist", `{"claims":[],"sets":[],"items":[]}`, false},
+	}
+	for _, c := range cases {
+		if err := e.validateData(c.name, []byte(c.data)); (err == nil) != c.ok {
+			t.Errorf("%s %s: valid=%v want %v (%v)", c.name, c.data, err == nil, c.ok, err)
+		}
 	}
 }

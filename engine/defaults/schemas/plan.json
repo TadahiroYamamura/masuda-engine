@@ -3,7 +3,7 @@
   "title": "plan",
   "type": "object",
   "additionalProperties": false,
-  "required": ["goal", "summary", "steps", "alternatives", "risks"],
+  "required": ["goal", "summary", "steps", "alternatives", "risks", "checks"],
   "properties": {
     "goal": {"type": "string", "pattern": "\\S"},
     "summary": {"type": "string", "pattern": "\\S"},
@@ -50,9 +50,34 @@
     "expected_byproducts": {
       "type": "array",
       "items": {"type": "string", "pattern": "\\S"}
+    },
+    "checks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "category", "question", "answer", "status"],
+        "properties": {
+          "id": {"$ref": "#/$defs/check-id"},
+          "category": {"$ref": "#/$defs/category"},
+          "question": {"type": "string", "pattern": "\\S"},
+          "answer": {"type": "string"},
+          "status": {"enum": ["addressed", "out_of_scope", "open"]}
+        },
+        "if": {"properties": {"status": {"enum": ["addressed", "out_of_scope"]}}},
+        "then": {"properties": {"answer": {"pattern": "\\S"}}}
+      }
     }
   },
   "$defs": {
+    "check-id": {
+      "description": "<category ID in upper case>-<number>, e.g. SPEC-1.",
+      "type": "string",
+      "pattern": "^[A-Z]+-[1-9][0-9]*$"
+    },
+    "category": {
+      "enum": ["spec", "security", "data", "release", "regression", "performance", "maintainability", "other"]
+    },
     "relpath": {
       "description": "Clean path relative to the repository root: no leading slash, no empty, '.' or '..' segments, no trailing slash.",
       "type": "string",

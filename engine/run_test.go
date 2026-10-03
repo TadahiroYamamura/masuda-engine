@@ -113,7 +113,7 @@ func TestRunCallPassesFeedbackAndEndsThroughFrames(t *testing.T) {
 		t.Fatalf("Check: %+v", p)
 	}
 	r := &fakeRunner{data: map[string][]byte{"/instructions": []byte("x")}, outputs: map[string][]byte{
-		"plan": []byte(`{"goal":"g","summary":"s","steps":[{"number":1,"title":"t1","description":"d","tests":[],"files":["a"]}],"alternatives":[],"risks":[],"expected_byproducts":[]}`),
+		"plan": []byte(`{"goal":"g","summary":"s","steps":[{"number":1,"title":"t1","description":"d","tests":[],"files":["a"]}],"alternatives":[],"risks":[],"expected_byproducts":[],"checks":[]}`),
 	}}
 	e := New(set, &kvStore{m: map[string][]byte{}}, r, Options{})
 	ctx := context.Background()

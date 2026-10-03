@@ -127,14 +127,14 @@ func TestBundledSchemas(t *testing.T) {
 		schema, data string
 		text, ok     bool
 	}{
-		{"plan", `{"goal":"g","summary":"do it","steps":[{"number":1,"title":"t1","description":"one","tests":[],"files":["a.go"]}],"alternatives":[],"risks":[],"expected_byproducts":[]}`, false, true},
-		{"plan", `{"goal":"g","summary":"s","steps":[{"number":1,"title":"t1","description":"a","tests":[],"files":["a.go"]},{"number":2,"title":"t2","description":"b","tests":[],"files":["dir/b.go"]}],"alternatives":[],"risks":[],"expected_byproducts":["go.sum"]}`, false, true},
+		{"plan", `{"goal":"g","summary":"do it","steps":[{"number":1,"title":"t1","description":"one","tests":[],"files":["a.go"]}],"alternatives":[],"risks":[],"expected_byproducts":[],"checks":[]}`, false, true},
+		{"plan", `{"goal":"g","summary":"s","steps":[{"number":1,"title":"t1","description":"a","tests":[],"files":["a.go"]},{"number":2,"title":"t2","description":"b","tests":[],"files":["dir/b.go"]}],"alternatives":[],"risks":[],"expected_byproducts":["go.sum"],"checks":[]}`, false, true},
 		{"plan", `{"not":"a plan"}`, false, false},
 		{"plan", `{"goal":"g","summary":"s","steps":[],"alternatives":[],"risks":[]}`, false, false},
 		{"plan", `{"goal":"g","summary":"s","steps":[{"number":1,"title":"t1","description":"a","tests":[],"files":["../x"]}],"alternatives":[],"risks":[]}`, false, false},
 		{"plan", `{"goal":"g","summary":"s","steps":[{"number":1,"title":"t1","description":"a","tests":[],"files":["/abs"]}],"alternatives":[],"risks":[]}`, false, false},
-		{"plan", `{"goal":"g","summary":"s","steps":[{"number":1,"title":"t","description":"d","tests":["3,4,5 で 6","負の辺で ValueError"],"files":["a.py","tests/test_a.py"]}],"alternatives":[{"option":"o","reason":"r"}],"risks":["x"],"expected_byproducts":["**/*.pyc"]}`, false, true},
-		{"plan", `{"summary":"s","steps":[{"number":1,"description":"a","files":["a.go"]}],"expected_byproducts":[]}`, false, false},
+		{"plan", `{"goal":"g","summary":"s","steps":[{"number":1,"title":"t","description":"d","tests":["3,4,5 で 6","負の辺で ValueError"],"files":["a.py","tests/test_a.py"]}],"alternatives":[{"option":"o","reason":"r"}],"risks":["x"],"expected_byproducts":["**/*.pyc"],"checks":[]}`, false, true},
+		{"plan", `{"summary":"s","steps":[{"number":1,"description":"a","files":["a.go"]}],"expected_byproducts":[],"checks":[]}`, false, false},
 		{"plan", `{"summary":"s","steps":[{"number":1,"title":"t","description":"a","tests":[],"files":["a.go"]}],"alternatives":[],"risks":[]}`, false, false},
 		{"plan", `{"goal":"g","summary":"s","steps":[{"number":1,"description":"a","tests":[],"files":["a.go"]}],"alternatives":[],"risks":[]}`, false, false},
 		{"plan", `{"goal":"g","summary":"s","steps":[{"number":1,"title":"t","description":"a","files":["a.go"]}],"alternatives":[],"risks":[]}`, false, false},

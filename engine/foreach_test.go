@@ -40,7 +40,7 @@ func (r *e5Runner) Diff(_ context.Context, _ RunID, kind DiffKind, from Snapshot
 	return nil
 }
 
-const e5Plan = `{"goal":"g","summary":"s","steps":[{"number":1,"title":"t1","description":"a","tests":[],"files":["a.go"]},{"number":2,"title":"t2","description":"b","tests":[],"files":["b.go"]},{"number":3,"title":"t3","description":"c","tests":[],"files":["c.go"]}],"alternatives":[],"risks":[],"expected_byproducts":[]}`
+const e5Plan = `{"goal":"g","summary":"s","steps":[{"number":1,"title":"t1","description":"a","tests":[],"files":["a.go"]},{"number":2,"title":"t2","description":"b","tests":[],"files":["b.go"]},{"number":3,"title":"t3","description":"c","tests":[],"files":["c.go"]}],"alternatives":[],"risks":[],"expected_byproducts":[],"checks":[]}`
 
 func e5Engine(t *testing.T, onIncomplete string) (*Engine, *e5Runner) {
 	t.Helper()

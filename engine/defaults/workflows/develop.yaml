@@ -11,9 +11,38 @@ nodes:
     role: agents/planner
     max: 4
     next:
-      done: approve-plan
+      done: questions
       needs_more_investigation: investigate
       out_of_scope: end:out_of_scope
+  questions:
+    type: agent
+    role: agents/plan-questions
+    next: revise
+  revise:
+    type: agent
+    role: agents/plan-reviser
+    max: 3
+    next:
+      done: approve-plan
+      needs_human: ask
+      needs_more_investigation: investigate
+      exhausted: approve-plan
+  ask:
+    type: question
+    role: agents/plan-interviewer
+    outputs: [answers]
+    next:
+      answered: revise-answered
+  revise-answered:
+    type: agent
+    role: agents/plan-reviser
+    inputs: [answers]
+    max: 3
+    next:
+      done: approve-plan
+      needs_human: ask
+      needs_more_investigation: investigate
+      exhausted: approve-plan
   approve-plan:
     type: approval
     gate: plan

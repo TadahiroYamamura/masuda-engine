@@ -36,7 +36,7 @@ outcomes:
 
 ## 計画
 
-`plan`はJSONで、スキーマ（`goal`・`summary`・`steps`・`alternatives`・`risks`・`expected_byproducts`）に合わない出力は受け付けられない。計画は人間が承認するために読む。小さな修正なら`steps`は1つでよい。
+`plan`はJSONで、スキーマ（`goal`・`summary`・`steps`・`alternatives`・`risks`・`expected_byproducts`・`checks`）に合わない出力は受け付けられない。計画は人間が承認するために読む。`checks`は計画に立てた問いとその答えを載せる欄だが、このワークフローには問いを立てる工程が無いので常に`[]`を書くこと。小さな修正なら`steps`は1つでよい。
 
 ### 計画の組み立て方
 

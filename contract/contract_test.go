@@ -493,7 +493,7 @@ func linearSet(t *testing.T) *engine.Set {
 	return set
 }
 
-const validPlan = `{"goal":"g","summary":"do it","steps":[{"number":1,"title":"t1","description":"one","tests":[],"files":["a.go"]}],"alternatives":[],"risks":[],"expected_byproducts":[]}`
+const validPlan = `{"goal":"g","summary":"do it","steps":[{"number":1,"title":"t1","description":"one","tests":[],"files":["a.go"]}],"alternatives":[],"risks":[],"expected_byproducts":[],"checks":[]}`
 
 func startLinear(t *testing.T) (*engine.Engine, *stub, engine.RunID) {
 	set := linearSet(t)
@@ -739,7 +739,7 @@ func TestCE5_ForeachStepsCommitDeviationPublish(t *testing.T) {
 	if err := e.Start(ctx, run, "workflows/x", []string{"instructions"}); err != nil {
 		t.Fatal(err)
 	}
-	plan := `{"goal":"g","summary":"s","steps":[{"number":1,"title":"t1","description":"a","tests":[],"files":["a.go"]},{"number":2,"title":"t2","description":"b","tests":[],"files":["b.go"]}],"alternatives":[],"risks":[],"expected_byproducts":["go.sum"]}`
+	plan := `{"goal":"g","summary":"s","steps":[{"number":1,"title":"t1","description":"a","tests":[],"files":["a.go"]},{"number":2,"title":"t2","description":"b","tests":[],"files":["b.go"]}],"alternatives":[],"risks":[],"expected_byproducts":["go.sum"],"checks":[]}`
 	st.outputs["*/plan"] = []byte(plan)
 	st.outputs["*/commit-message"] = []byte("feat: step")
 	st.outputs["*/findings"] = []byte(`[]`)
@@ -929,6 +929,7 @@ func TestCE7_BundledDefinitionsCheckAndDevelopReachesPublish(t *testing.T) {
 	st.outputs["*/findings"] = []byte(`[]`)
 	st.outputs["*/cross-cutting-candidates"] = []byte(`[]`)
 	st.outputs["*/report"] = []byte("# report\nclean\n")
+	st.outputs["*/plan-checklist"] = []byte(`{"claims":[],"sets":[],"items":[],"not_covered":[]}`)
 	st.items["steps"] = []engine.Item{{Key: "1", Input: "step", Content: []byte(`{"number":1,"title":"t1","description":"one","tests":[],"files":["a.go"]}`)}}
 	st.changed = []string{"a.go"}
 
