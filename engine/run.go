@@ -656,59 +656,68 @@ func (e *Engine) reportResult(ctx context.Context, run RunID, occ, outcome, feed
 		return fmt.Errorf("engine: %s does not declare outcome %q", a.Name, outcome)
 	}
 	res := result{Outcome: outcome, Feedback: feedback}
-	if outcome == OutcomeDone {
-		var reasons []string
-		got := map[string][]byte{}
-		for _, name := range o.Outputs {
-			c, ok, err := e.runner.ReadOutput(ctx, run, occ, name)
-			if err != nil {
-				return err
-			}
-			if !ok {
+	done := outcome == OutcomeDone
+	// 宣言した出力は done のときだけ必須で、それ以外の終わり方では書かれた
+	// ものだけを検証して保存する。recheckerが取り下げを書きつつunresolvedで
+	// 差し戻すように、done以外の報告にもデータを添えたい役があるため。
+	// 不正な出力は終わり方を問わず差し戻す。黙って捨てると、書いたつもりの
+	// データが消えたことに役もワークフローも気づけない。
+	var reasons, written []string
+	got := map[string][]byte{}
+	for _, name := range o.Outputs {
+		c, ok, err := e.runner.ReadOutput(ctx, run, occ, name)
+		if err != nil {
+			return err
+		}
+		if !ok {
+			if done {
 				reasons = append(reasons, fmt.Sprintf("宣言した出力%qが書かれていない", name))
-				continue
 			}
-			if err := e.validateData(name, c); err != nil {
-				reasons = append(reasons, fmt.Sprintf("出力%qが不正: %v", name, err))
-				continue
-			}
-			got[name] = c
+			continue
 		}
-		var answers []byte
-		if n.Type == NodeQuestion {
-			var reason string
-			if answers, reason, err = e.collectedAnswers(run, occ, n.Outputs[0]); err != nil {
-				return err
-			}
-			if reason != "" {
-				reasons = append(reasons, reason)
-			}
+		if err := e.validateData(name, c); err != nil {
+			reasons = append(reasons, fmt.Sprintf("出力%qが不正: %v", name, err))
+			continue
 		}
-		if len(reasons) > 0 {
-			detail := strings.Join(reasons, "; ")
-			e.log(run, Event{Kind: "invalid", Occurrence: occ, Workflow: o.Workflow, Node: o.Node, Outcome: outcome, Detail: detail})
-			res := result{Outcome: outcome, Invalid: true, Feedback: "前回の報告は受け付けられなかった: " + detail}
-			if err := e.finishAgent(ctx, run, o, a, &res); err != nil {
-				return err
-			}
-			return e.record(run, o, res, feedbackDetail(feedback))
+		got[name] = c
+		written = append(written, name)
+	}
+	var answers []byte
+	if done && n.Type == NodeQuestion {
+		var reason string
+		if answers, reason, err = e.collectedAnswers(run, occ, n.Outputs[0]); err != nil {
+			return err
 		}
+		if reason != "" {
+			reasons = append(reasons, reason)
+		}
+	}
+	if len(reasons) > 0 {
+		detail := strings.Join(reasons, "; ")
+		e.log(run, Event{Kind: "invalid", Occurrence: occ, Workflow: o.Workflow, Node: o.Node, Outcome: outcome, Detail: detail})
+		res := result{Outcome: outcome, Invalid: true, Feedback: "前回の報告は受け付けられなかった: " + detail}
+		if err := e.finishAgent(ctx, run, o, a, &res); err != nil {
+			return err
+		}
+		return e.record(run, o, res, feedbackDetail(feedback))
+	}
+	if len(written) > 0 {
 		recs, err := e.loadRecords(run)
 		if err != nil {
 			return err
 		}
-		if err := e.putOutputs(ctx, run, recs, occ, o.Outputs, got); err != nil {
+		if err := e.putOutputs(ctx, run, recs, occ, written, got); err != nil {
 			return err
 		}
-		res.Outputs = o.Outputs
-		if n.Type == NodeQuestion {
-			name := n.Outputs[0]
-			if err := e.runner.PutData(ctx, run, DataRef{Name: name, Occurrence: occ}, answers); err != nil {
-				return err
-			}
-			res.Outcome = OutcomeAnswered
-			res.Outputs = append(slices.Clone(o.Outputs), name)
+		res.Outputs = written
+	}
+	if done && n.Type == NodeQuestion {
+		name := n.Outputs[0]
+		if err := e.runner.PutData(ctx, run, DataRef{Name: name, Occurrence: occ}, answers); err != nil {
+			return err
 		}
+		res.Outcome = OutcomeAnswered
+		res.Outputs = append(slices.Clone(res.Outputs), name)
 	}
 	if err := e.finishAgent(ctx, run, o, a, &res); err != nil {
 		return err

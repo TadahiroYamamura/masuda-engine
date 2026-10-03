@@ -1066,3 +1066,98 @@ func TestCE8_CheckRejectsUnsafeOrUnreachableContinues(t *testing.T) {
 		t.Fatal("Load accepted continues on an exec node")
 	}
 }
+
+// ---------------------------------------------------------------------------
+// C-E9: outputs on outcomes other than done
+// ---------------------------------------------------------------------------
+
+// startOutputs は、seedが done で note を書いた後の w で止まった run を返す。
+// Set.Check は出力を done の遷移でだけ用意済みとみなすので、r が読む note は
+// seed が保証し、w が done 以外で書いた note がそれより新しい値になるかを見る。
+func startOutputs(t *testing.T, run engine.RunID) (*engine.Engine, *stub) {
+	set := mustLoad(t, repoFS(map[string]string{
+		"agents/seed.md": agentMD("seed", "Read", []string{"note"}),
+		"agents/w.md":    agentMD("w", "Read", []string{"note", "plan"}, "partial", "empty"),
+		"agents/r.md":    agentMD("r", "Read", nil),
+		"workflows/x.yaml": "version: 1\nstart: seed\nnodes:\n" +
+			"  seed: {type: agent, role: agents/seed, next: w}\n" +
+			"  w: {type: agent, role: agents/w, max: 5, next: {done: r, partial: r, empty: end:empty}}\n" +
+			"  r: {type: agent, role: agents/r, inputs: [note], next: end}\n",
+	}))
+	mustCheck(t, set, "workflows/x")
+	st := newStub()
+	e, _ := newEngine(t, set, st)
+	ctx := context.Background()
+	if err := e.Start(ctx, run, "workflows/x", nil); err != nil {
+		t.Fatal(err)
+	}
+	seed := wantAgent(t, advance(t, e, run), "seed")
+	st.outputs[seed.Occurrence+"/note"] = []byte("n0")
+	if err := e.ReportResult(ctx, run, seed.Occurrence, "done", ""); err != nil {
+		t.Fatal(err)
+	}
+	return e, st
+}
+
+func TestCE9_OutputsWrittenOnOtherOutcomesAreValidatedAndStored(t *testing.T) {
+	run := engine.RunID("ws9")
+	e, st := startOutputs(t, run)
+	ctx := context.Background()
+
+	// 不正な出力は done 以外でも差し戻す。
+	w1 := wantAgent(t, advance(t, e, run), "w")
+	st.outputs[w1.Occurrence+"/note"] = []byte("n1")
+	st.outputs[w1.Occurrence+"/plan"] = []byte(`{"not":"a plan"}`)
+	if err := e.ReportResult(ctx, run, w1.Occurrence, "partial", ""); err != nil {
+		t.Fatalf("an invalid output must re-enter, not fail: %v", err)
+	}
+	w2 := wantAgent(t, advance(t, e, run), "w")
+	if w2.Occurrence == w1.Occurrence || !strings.Contains(w2.Feedback, "plan") {
+		t.Fatalf("want a re-entry naming the invalid output, got %+v", w2)
+	}
+	if _, ok := st.data[w1.Occurrence+"/note"]; ok {
+		t.Fatalf("nothing of a refused report may be stored")
+	}
+
+	// done 以外で書かれた出力は保存され、次のノードの入力として解決される。
+	// 書かれていない plan は done 以外なので問わない。
+	st.outputs[w2.Occurrence+"/note"] = []byte("n2")
+	if err := e.ReportResult(ctx, run, w2.Occurrence, "partial", ""); err != nil {
+		t.Fatal(err)
+	}
+	r := wantAgent(t, advance(t, e, run), "r")
+	if in := r.Inputs["note"]; in.Occurrence != w2.Occurrence {
+		t.Fatalf("the note written on partial must be the latest value, got %+v", in)
+	}
+	if got := mustGet(t, st, r.Inputs["note"]); string(got) != "n2" {
+		t.Fatalf("stored note = %q", got)
+	}
+	if _, ok := st.data[w2.Occurrence+"/plan"]; ok {
+		t.Fatalf("an output that was not written must not be stored")
+	}
+}
+
+func TestCE9_OutputsAreRequiredOnlyOnDone(t *testing.T) {
+	run := engine.RunID("ws9b")
+	e, st := startOutputs(t, run)
+	ctx := context.Background()
+
+	// done では従来どおり、書かれていない出力があれば差し戻す。
+	w1 := wantAgent(t, advance(t, e, run), "w")
+	st.outputs[w1.Occurrence+"/note"] = []byte("n1")
+	if err := e.ReportResult(ctx, run, w1.Occurrence, "done", ""); err != nil {
+		t.Fatal(err)
+	}
+	w2 := wantAgent(t, advance(t, e, run), "w")
+	if w2.Occurrence == w1.Occurrence || !strings.Contains(w2.Feedback, "plan") {
+		t.Fatalf("done without plan must re-enter naming it, got %+v", w2)
+	}
+
+	// done 以外では何も書かなくても結果は有効。
+	if err := e.ReportResult(ctx, run, w2.Occurrence, "empty", ""); err != nil {
+		t.Fatal(err)
+	}
+	if s := advance(t, e, run); s.Kind != engine.StatusDone || s.Outcome != "empty" {
+		t.Fatalf("want the run to end with empty, got %+v", s)
+	}
+}

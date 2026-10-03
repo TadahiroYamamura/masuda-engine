@@ -239,7 +239,7 @@ type AgentTask struct {
 	Node       string
 	Agent      *Agent
 	Inputs     map[string]DataRef // input name -> value to materialize
-	Outputs    []string           // names the agent must write
+	Outputs    []string           // names the agent must write on done (and may write otherwise)
 	Feedback   string             // from the previous node/gate, if any
 	Policy     Policy
 	// Continues は、このタスクを続けて渡す宛先の出現ID。ノードが`continues`
@@ -515,9 +515,11 @@ func (e *Engine) Advance(ctx context.Context, run RunID) (Status, error) {
 }
 
 // ReportResult records how an agent occurrence ended. The engine verifies the
-// outcome is one the agent declared and, on done, that every declared output
-// was written (via Runner.ReadOutput) and validates against schemas; failing
-// that it re-enters the node with the reason as feedback.
+// outcome is one the agent declared and reads the declared outputs (via
+// Runner.ReadOutput): on done every one must be written, on any other outcome
+// only those written are taken. Whatever was written must validate against
+// schemas and is stored; failing that it re-enters the node with the reason
+// as feedback.
 func (e *Engine) ReportResult(ctx context.Context, run RunID, occurrence, outcome, feedback string) error {
 	return e.reportResult(ctx, run, occurrence, outcome, feedback)
 }
