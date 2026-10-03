@@ -22,7 +22,8 @@ func (r *bundledRunner) Publish(context.Context, PublishRequest) error { r.publi
 // third has nothing the fixer may fix. The final review's clean still passes
 // the checker, which sends it back once; the fixer's cannot_fix hands the
 // rest to the report. After a rework, a clean review with nothing to fix
-// skips the recheck.
+// skips the recheck. Every implementer, the rework included, reads the
+// investigation.
 func TestBundledDevelopReviewsInOneSessionPerRole(t *testing.T) {
 	set, err := Load(nil, Bundled())
 	if err != nil {
@@ -119,6 +120,11 @@ func TestBundledDevelopReviewsInOneSessionPerRole(t *testing.T) {
 				t.Fatalf("step %d: %v", i, err)
 			}
 			continue
+		}
+		if s.Task.Agent.Name == "implementer" {
+			if _, ok := s.Task.Inputs["investigation"]; !ok {
+				t.Fatalf("step %d: the implementer must read the investigation, got %+v", i, s.Task.Inputs)
+			}
 		}
 		if s.Task.Node == "interim-review" || s.Task.Node == "interim-check" {
 			if in := s.Task.Inputs["diff"]; in.Name != "step-diff" {
