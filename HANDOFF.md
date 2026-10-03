@@ -1,27 +1,24 @@
 # HANDOFF
 ## 作業項目
-同梱の役がスキルを呼べるよう、`engine/defaults/agents/*.md`の`tools`に`Skill`を足した。同梱の役は15個すべてが`tools`を明示しているので、15個すべてが対象（`tools`を省略している役は無い）。契約（`engine/api.go`・`docs/workflow-schema.md`）は変えていない。
+E12（#8）: engineの開発をmasudaのrunで進めるため、`.masuda/`を置いた。契約（`engine/api.go`・`docs/workflow-schema.md`）は変えていない。
 
-- `Skill`はスキルの指示を読み込むだけの道具。`Agent.WriteCapable`（`engine/api.go`）は`Write`か`Edit`を持つか`tools`省略かだけを見るので、書き込めるかの判定は変わらない
-- `continues`の「続ける側の`tools`は続けられる側の部分集合」の検査（`engine/check.go`の`toolsWithin`）も、全役に同じ`Skill`を足したので崩れない
-- `docs/workflow-schema.md`の`tools`の記述は「`Write`か`Edit`を持つ（または省略）エージェントが『書き込める』」で、`Skill`が書き込みに数えられないことは既に読めるので変えていない
-追加: 実機でplan-questionsが`plan`の`checks`（問いと答えの欄）と対象リポジトリの`.masuda/settings.json`の`checks`（ビルド・テストのコマンド）を取り違え、「`plan`の`checks`が空配列だが検査コマンドを載せなくてよいか」と問うたため、`plan-questions.md`と`plan-reviser.md`に両者が無関係であること（`plan`の`checks`は最初の計画では`[]`）を明記した（別コミット）。
-
-追加: `review-checker.md`の`inputs`に`comment-manifest`を足し、コメントに関する指摘（`comment-criteria`等）を検証するときに一覧と差分の照合を確かめるよう本文に書いた（別コミット）。`bundled_test.go`の`checkCommentManifest`でreview-checkerの`Inputs`も確かめる。`workflows/review`でも累積データなので`Set.Check`は通る
-
+- `0be1588` `.masuda/settings.json`（image default、egress・secrets・envFiles空、`checks.test`は`go build ./... && go vet ./... && go test ./...`、`claudeSettings.model: opus`、`images.default.diskMiB: 8192`）、`.masuda/images/default/Dockerfile`と`ctx/go.mod`・`ctx/go.sum`（`go.mod`・`go.sum`の写し）、`.gitignore`に`.masuda/settings.local.json`・`.masuda/claude.local/`
+- `fe51ca8` `.masuda/pitfalls.jsonl`（8件: contract-unchanged・bundled-enumeration・continues-tools-subset・accumulate-last-wins・schema-doc-is-user-facing・minimal-dependencies・handoff-overwrite・test-names-as-sentences）
 ## 完了した契約テスト
-C-E1〜C-E9すべて緑（`go build ./... && go vet ./... && go test -count=1 ./...`）。`TestBundled*`も緑
+C-E1〜C-E9は無修正で緑（`go build ./... && go vet ./... && go test -count=1 ./...`）。ほかの検証:
+- `masuda workflow check --repo ../masuda-engine`（フェイクのserve、一時dirのソケット）が`ok`。わざと`category`を壊すと`pitfalls.jsonl: line 2: ...`で問題1件になることも確かめて戻した。serveは止めた
+- `docker build -t masuda-engine-dev-check:e12-<時刻> .masuda/images/default`が通り、中で`claude --version`=2.1.287、go1.26.8、gopls v0.23.0、jsonschemaの前取りを確認。そのタグだけ`docker rmi`した
 ## 未完と理由
-- なし。実機でサブエージェントがスキルを呼べることはmasudaの`live/claude_dir_test.go`（`TestClaudeDirReachesSubagent`、Claude Code 2.1.287、`Skill=1`）で確認済み
+- なし。実機（実VM）での`masuda run`はしていない（指示書の検証に含まれない）
 ## 次の一手
-- **v0.2の目標は「masudaを使ってmasudaが作れる体制」**（ユーザー決定、2026-10-03）。engine側の項目は**#8**（engineリポジトリに`.masuda/`を置く）。masuda側はmasudaのマイルストーンv0.2（#68 #69 #70 #61）
+- masuda側のv0.2（#68 #69 #70 #61）。engine側でこのリポジトリに対して実際にrunを1周させ、イメージ・checks・pitfallsが効くかを見る
 - masuda #69の結果次第で、役ごとのモデル指定（`Agent.Model`）の契約の提案が来る
-- `withdrawn`の保存は**#7**（v0.3、masuda #67と一緒に）
-- mainは`fd33f3c`までpush済み。次のリリースはv0.2.0（契約変更: `continues`、`done`以外の出力の保存）
+- `withdrawn`の保存は#7（v0.3）
 ## 注意点
-- この変更はmasuda側の`.masuda/claude/`（と`.masuda/claude.local/`）のスキル配置と対になる。それが無いとゲストにスキルが無く、`Skill`は呼ばれない
-- 対象リポジトリで`agents/*.md`を差し替えている場合、差し替えた定義の`tools`に`Skill`が無ければその役はスキルを呼べない。また差し替えた役が同梱の役を`continues`する（またはその逆の）組み合わせでは、`tools`の部分集合の検査に`Skill`が効くことがある
-- 解消済み: `0300b66`のHANDOFFにあった「review-checkerは`comment-manifest`を入力に取らず、`comment-criteria`の指摘の検証で一覧を読めない」は、review-checkerの`inputs`に足して解消した。masuda側で`agents/review-checker.md`に足す必要は無い
+- 着手時点で`../masuda/.masuda/`は別の実装者が整えている途中だった（gitignoreされたまま、Dockerfileは`install.sh | bash`で版未固定、pitfalls.jsonl無し、`checks.test`は`go test ./...`のみ）。こちらは指示書の構成で書いた。向こうが仕上がったら差（コメント・goplsの版固定の有無など）を見比べるとよい
+- goplsは`@latest`（masudaのDockerfileに倣った）。再現性が要るなら版を固定する
+- Claude Codeの版はmasudaの`internal/guest/guest.go`の`ClaudeCodeVersion`の直書き。masudaで上がったらここも上げる。`go.mod`・`go.sum`を変えたら`cp go.mod go.sum .masuda/images/default/ctx/`
+- `test-names-as-sentences`は「日本語の文で書く」とした。既存テストの関数名は英語の文（`TestTriageDismissKeepsAFinishedResult`等）で、指示書の「既存テストに倣う」とユーザーのルール（日本語）が食い違うため、日本語を取った。どちらにするか監督が決めて直してよい
+- `docs/work-orders.md`のE12の追記（監督の未コミットの変更）はコミットしていない
 ## 契約への提案
-- `withdrawn`の保存はIssue #7に移した（v0.3）
-- 前回からの持ち越し: 同梱スキーマの列挙から`selected-perspectives`を外すか、`workflow`ノードに`inputs`を書けるようにするか（reviewerへ計画を渡す手段）
+- なし。前回からの持ち越し: 同梱スキーマの列挙から`selected-perspectives`を外すか、`workflow`ノードに`inputs`を書けるようにするか（reviewerへ計画を渡す手段）
