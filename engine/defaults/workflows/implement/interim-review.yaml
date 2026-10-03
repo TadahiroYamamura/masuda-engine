@@ -1,19 +1,19 @@
 version: 1
 inputs: [diff]
-start: review
+start: interim-review
 nodes:
-  review:
+  interim-review:
     type: agent
     role: agents/reviewer
     max: 3
     next:
-      done: check-review
+      done: interim-check
       clean: end:clean
       exhausted: end
-  check-review:
+  interim-check:
     type: agent
     role: agents/review-checker
     next:
       done: end
       clean: end:clean
-      inaccurate: review
+      inaccurate: interim-review

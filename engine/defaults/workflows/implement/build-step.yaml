@@ -14,30 +14,31 @@ nodes:
     type: exec
     command: ["/masuda/checks/test"]
     next:
-      done: pick-perspectives
+      done: review
       failed: implement
-  pick-perspectives:
-    type: agent
-    role: agents/trigger-matcher
-    next: interim-find
-  interim-find:
-    type: foreach
-    over: perspectives(from=pick-perspectives)
-    on_incomplete: continue
-    body: workflows/review/perspective-review
+  review:
+    type: workflow
+    workflow: workflows/implement/interim-review
     with:
       diff: step-diff
     next:
-      done: interim-fix
-      incomplete: approve-interim
-  interim-fix:
-    type: foreach
-    over: findings[autofix=true]
-    on_incomplete: continue
-    body: workflows/fix-finding
+      done: fix
+      clean: commit
+  fix:
+    type: agent
+    role: agents/fixer
+    max: 3
+    next:
+      done: recheck
+      cannot_fix: approve-interim
+      exhausted: approve-interim
+  recheck:
+    type: agent
+    role: agents/rechecker
     next:
       done: commit
-      incomplete: approve-interim
+      unresolved: fix
+      exhausted: approve-interim
   approve-interim:
     type: approval
     gate: interim

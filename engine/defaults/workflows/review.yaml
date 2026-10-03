@@ -4,7 +4,9 @@ nodes:
   review:
     type: workflow
     workflow: workflows/review/perspectives
-    next: cross-cutting
+    next:
+      done: cross-cutting
+      clean: cross-cutting
   cross-cutting:
     type: workflow
     workflow: workflows/review/cross-cutting
