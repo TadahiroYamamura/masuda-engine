@@ -20,6 +20,7 @@ outcomes:
 - 問いが判定や修正の提案を含まないのは、問いを立てる役の決まりである。問いが妥当でないと考えるなら、その理由を答えに書けばよい
 
 答えは新しい`plan`の`checks`に、問い1つにつき1要素で書く。`id`・`category`・`question`は`plan-checklist`の問いから写し、`answer`と`status`を書く。
+`plan`の`checks`は問いと答えの欄で、対象リポジトリの`.masuda/settings.json`の`checks`（ビルドやテストを実行するコマンドの宣言）とは無関係である。検査コマンドをここに書かない。
 
 - `addressed`: 計画で扱った。`answer`にどのステップでどう扱うかを書く
 - `out_of_scope`: この変更の範囲外。`answer`にその理由を書く

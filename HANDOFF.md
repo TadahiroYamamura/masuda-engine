@@ -5,6 +5,8 @@
 - `Skill`はスキルの指示を読み込むだけの道具。`Agent.WriteCapable`（`engine/api.go`）は`Write`か`Edit`を持つか`tools`省略かだけを見るので、書き込めるかの判定は変わらない
 - `continues`の「続ける側の`tools`は続けられる側の部分集合」の検査（`engine/check.go`の`toolsWithin`）も、全役に同じ`Skill`を足したので崩れない
 - `docs/workflow-schema.md`の`tools`の記述は「`Write`か`Edit`を持つ（または省略）エージェントが『書き込める』」で、`Skill`が書き込みに数えられないことは既に読めるので変えていない
+追加: 実機でplan-questionsが`plan`の`checks`（問いと答えの欄）と対象リポジトリの`.masuda/settings.json`の`checks`（ビルド・テストのコマンド）を取り違え、「`plan`の`checks`が空配列だが検査コマンドを載せなくてよいか」と問うたため、`plan-questions.md`と`plan-reviser.md`に両者が無関係であること（`plan`の`checks`は最初の計画では`[]`）を明記した（別コミット）。
+
 ## 完了した契約テスト
 C-E1〜C-E9すべて緑（`go build ./... && go vet ./... && go test -count=1 ./...`）。`TestBundled*`も緑
 ## 未完と理由
