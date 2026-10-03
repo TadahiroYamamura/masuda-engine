@@ -27,6 +27,7 @@ nodes:
   fix:
     type: agent
     role: agents/fixer
+    continues: agents/implementer
     max: 3
     next:
       done: recheck

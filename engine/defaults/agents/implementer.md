@@ -42,3 +42,7 @@ rootやDockerを要するテストは、`/workspace/.masuda/settings.json`の`pr
 ## LSPと依存解決
 
 利用可能ならClaude Code純正のLSPツール（find references・go to definition等）を使うこと。LSPが正しく機能するには依存解決が必要な場合がある。環境が未セットアップの場合、CLAUDE.md・README等を参照して依存解決（`go mod download`・`npm install`等）を行ってから使うこと。依存解決が外部ネットワークに阻まれた場合、このVMのegressは既定で拒否のため再試行しても解決しない。LSPは補助であり必須ではないので、その場合はLSP無しでRead/Grep/Globで進めてよい。
+
+## 続きのタスク
+
+このサブエージェントは、後でレビューの指摘の修正（fixerの役）を続きのタスクとして受け取ることがある。そのときは新しいタスクファイルの指示に従う。

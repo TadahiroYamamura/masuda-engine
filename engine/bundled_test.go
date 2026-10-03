@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"slices"
+	"strings"
 	"testing"
 )
 
@@ -15,6 +16,23 @@ func (r *bundledRunner) RunCommand(context.Context, CommandTask) (CommandResult,
 	return CommandResult{}, nil
 }
 func (r *bundledRunner) Publish(context.Context, PublishRequest) error { r.published++; return nil }
+
+// checkContinues は、fixerが直前に終わったimplementer（developの最終の修正では
+// 最後のステップかreworkのもの）に続けて渡され、同梱の他の役は誰も続けない
+// ことを確かめる。
+func checkContinues(t *testing.T, i int, task *AgentTask, lastImpl string) {
+	t.Helper()
+	want := ""
+	if task.Agent.Name == "fixer" {
+		want = lastImpl
+		if want == "" {
+			t.Fatalf("step %d: a fixer ran before any implementer", i)
+		}
+	}
+	if task.Continues != want {
+		t.Fatalf("step %d: %s/%s Continues = %q, want %q", i, task.Workflow, task.Node, task.Continues, want)
+	}
+}
 
 // TestBundledDevelopReviewsInOneSessionPerRole walks the bundled develop
 // with three steps: the first step's interim review is clean and goes
@@ -68,6 +86,7 @@ func TestBundledDevelopReviewsInOneSessionPerRole(t *testing.T) {
 	}
 
 	type step struct{ at, outcome string }
+	var lastImpl string
 	script := []step{
 		{"workflows/develop/investigate", "done"},
 		{"workflows/develop/plan", "done"},
@@ -125,6 +144,10 @@ func TestBundledDevelopReviewsInOneSessionPerRole(t *testing.T) {
 			if _, ok := s.Task.Inputs["investigation"]; !ok {
 				t.Fatalf("step %d: the implementer must read the investigation, got %+v", i, s.Task.Inputs)
 			}
+		}
+		checkContinues(t, i, s.Task, lastImpl)
+		if s.Task.Agent.Name == "implementer" {
+			lastImpl = s.Occurrence
 		}
 		if s.Task.Node == "interim-review" || s.Task.Node == "interim-check" {
 			if in := s.Task.Inputs["diff"]; in.Name != "step-diff" {
@@ -198,6 +221,7 @@ func TestBundledFixPlansInOneSessionAndPublishes(t *testing.T) {
 	}
 
 	type step struct{ at, outcome string }
+	var lastImpl string
 	script := []step{
 		{"workflows/fix/plan", "done"},
 		{"gate:plan", "approved"},
@@ -237,6 +261,10 @@ func TestBundledFixPlansInOneSessionAndPublishes(t *testing.T) {
 				t.Fatalf("step %d: the implementer must read the investigation, got %+v", i, s.Task.Inputs)
 			}
 		}
+		checkContinues(t, i, s.Task, lastImpl)
+		if s.Task.Agent.Name == "implementer" {
+			lastImpl = s.Occurrence
+		}
 		if err := e.ReportResult(ctx, "r", s.Occurrence, want.outcome, ""); err != nil {
 			t.Fatalf("step %d (%s): %v", i, want.at, err)
 		}
@@ -250,5 +278,95 @@ func TestBundledFixPlansInOneSessionAndPublishes(t *testing.T) {
 	}
 	if !slices.Equal(scopes, []string{"step", "plan", "plan", "plan"}) {
 		t.Fatalf("want the step commit, the review commit, the rework commit and the second review commit, got %v", scopes)
+	}
+}
+
+// TestBundledBuildStepDisputeEndsAtInterimGate は、fixerが反論し続け、
+// recheckerが指摘を維持し続ける1ステップを歩かせる。3回の修正の後、4回目の
+// 進入がexhaustedになりinterimゲートへ渡る。どの修正もそのステップの
+// implementerに続けて渡され、反論（disputed・response）が指摘の台帳に届く。
+func TestBundledBuildStepDisputeEndsAtInterimGate(t *testing.T) {
+	set, err := Load(nil, Bundled())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p := set.Check("workflows/develop"); len(p) != 0 {
+		t.Fatalf("Check develop: %+v", p)
+	}
+	plan := `{"goal":"g","summary":"s","steps":[{"number":1,"title":"t1","description":"a","tests":[],"files":["a.go"]}],"alternatives":[],"risks":[],"expected_byproducts":[]}`
+	finding := `{"id":"f1","file":"a.go","line":3,"severity":"中","autofix":true,"message":"m"}`
+	disputed := `{"id":"f1","file":"a.go","line":3,"severity":"中","autofix":true,"message":"m","disputed":true,"response":"計画のステップ1でこの形にすると決めている"}`
+	r := &bundledRunner{e5Runner: e5Runner{
+		fakeRunner: fakeRunner{data: map[string][]byte{"/instructions": []byte("x")}, outputs: map[string][]byte{
+			"investigation":  []byte("i"),
+			"plan":           []byte(plan),
+			"findings":       []byte("[" + finding + "]"),
+			"commit-message": []byte("feat: x"),
+		}},
+		items:   []Item{{Key: "1", Input: "step", Content: []byte(`{"number":1,"title":"t1","description":"a","tests":[],"files":["a.go"]}`)}},
+		changed: []string{"a.go"},
+	}}
+	e := New(set, &kvStore{m: map[string][]byte{}}, r, Options{})
+	ctx := context.Background()
+	if err := e.Start(ctx, "r", "workflows/develop", []string{"instructions"}); err != nil {
+		t.Fatal(err)
+	}
+	type step struct{ at, outcome string }
+	script := []step{
+		{"workflows/develop/investigate", "done"},
+		{"workflows/develop/plan", "done"},
+		{"gate:plan", "approved"},
+		{"workflows/implement/build-step/implement", "done"},
+		{"workflows/implement/interim-review/interim-review", "done"},
+		{"workflows/implement/interim-review/interim-check", "done"},
+		{"workflows/implement/build-step/fix", "done"},
+		{"workflows/implement/build-step/recheck", "unresolved"},
+		{"workflows/implement/build-step/fix", "done"},
+		{"workflows/implement/build-step/recheck", "unresolved"},
+		{"workflows/implement/build-step/fix", "done"},
+		{"workflows/implement/build-step/recheck", "unresolved"},
+		{"gate:interim", "approved"},
+		{"workflows/review/perspectives/review", "clean"},
+	}
+	var lastImpl, fixOcc string
+	for i, want := range script {
+		s := mustAdvance(t, e)
+		var at string
+		switch s.Kind {
+		case StatusAgent:
+			at = s.Task.Workflow + "/" + s.Task.Node
+		case StatusGate:
+			at = "gate:" + s.Gate.Gate
+		default:
+			t.Fatalf("step %d: want %s, got %+v", i, want.at, s)
+		}
+		if at != want.at {
+			t.Fatalf("step %d: want %s, got %s", i, want.at, at)
+		}
+		if s.Kind == StatusGate {
+			if err := e.Decide(ctx, "r", s.Occurrence, Decision{Outcome: want.outcome, TargetHash: s.Gate.TargetHash}); err != nil {
+				t.Fatalf("step %d: %v", i, err)
+			}
+			continue
+		}
+		checkContinues(t, i, s.Task, lastImpl)
+		switch s.Task.Agent.Name {
+		case "implementer":
+			lastImpl = s.Occurrence
+		case "fixer":
+			r.outputs["findings"] = []byte("[" + disputed + "]")
+			fixOcc = s.Occurrence
+		case "rechecker":
+			if in := s.Task.Inputs["findings"]; in.Occurrence != fixOcc {
+				t.Fatalf("step %d: the rechecker must read the fixer's findings, got %+v", i, in)
+			}
+			got := string(r.data[fixOcc+"/findings"])
+			if !strings.Contains(got, `"disputed":true`) || !strings.Contains(got, `"response"`) {
+				t.Fatalf("step %d: the dispute did not reach the ledger: %s", i, got)
+			}
+		}
+		if err := e.ReportResult(ctx, "r", s.Occurrence, want.outcome, ""); err != nil {
+			t.Fatalf("step %d (%s): %v", i, want.at, err)
+		}
 	}
 }

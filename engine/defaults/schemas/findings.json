@@ -19,7 +19,9 @@
       "autofix": {"type": "boolean"},
       "message": {"type": "string", "pattern": "\\S"},
       "suggestion": {"type": "string"},
-      "withdrawn": {"type": "boolean"}
+      "withdrawn": {"type": "boolean"},
+      "disputed": {"type": "boolean"},
+      "response": {"type": "string"}
     }
   }
 }
