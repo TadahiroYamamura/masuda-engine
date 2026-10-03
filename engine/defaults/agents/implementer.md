@@ -1,7 +1,7 @@
 ---
 name: implementer
 description: 計画の1ステップを実装する（差し戻し後の手直しも行う）
-tools: Read, Grep, Glob, Edit, Write, Bash, LSP
+tools: Read, Grep, Glob, Edit, Write, Bash, LSP, Skill
 inputs: [plan, investigation]
 outputs: [commit-message, comment-manifest]
 outcomes:

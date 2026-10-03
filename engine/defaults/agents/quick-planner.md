@@ -1,7 +1,7 @@
 ---
 name: quick-planner
 description: 小さな修正のために、リポジトリを調べて調査結果と計画を1度に書く
-tools: Read, Grep, Glob, Bash, LSP
+tools: Read, Grep, Glob, Bash, LSP, Skill
 inputs: [instructions]
 outputs: [investigation, plan]
 outcomes:

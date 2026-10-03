@@ -1,7 +1,7 @@
 ---
 name: planner
 description: 調査結果をもとに、変更方針とステップ分解を計画として書く
-tools: Read, Grep, Glob, Bash, LSP
+tools: Read, Grep, Glob, Bash, LSP, Skill
 inputs: [instructions, investigation]
 outputs: [plan]
 outcomes:

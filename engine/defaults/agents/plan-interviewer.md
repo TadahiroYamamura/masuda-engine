@@ -1,7 +1,7 @@
 ---
 name: plan-interviewer
 description: 計画の問いのうち、計画を直す役が判断できなかったものを人間に聞く
-tools: Read
+tools: Read, Skill
 inputs: [plan]
 outcomes:
   done: 未回答の問いをすべて人間に聞き、答えを得た

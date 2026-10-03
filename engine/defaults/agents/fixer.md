@@ -1,7 +1,7 @@
 ---
 name: fixer
 description: レビューの指摘をまとめて直し、誤りと判断した指摘には反論する
-tools: Read, Grep, Glob, Edit, Write, Bash, LSP
+tools: Read, Grep, Glob, Edit, Write, Bash, LSP, Skill
 inputs: [findings, plan]
 outputs: [findings, comment-manifest]
 outcomes:

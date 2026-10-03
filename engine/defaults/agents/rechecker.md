@@ -1,7 +1,7 @@
 ---
 name: rechecker
 description: 修正で指摘が解消したかを確かめ、修正者の反論を裁定する
-tools: Read, Grep, Glob, LSP
+tools: Read, Grep, Glob, LSP, Skill
 inputs: [findings, step-diff]
 outputs: [findings]
 outcomes:

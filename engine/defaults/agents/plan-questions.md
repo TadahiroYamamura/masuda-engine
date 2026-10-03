@@ -1,7 +1,7 @@
 ---
 name: plan-questions
 description: 計画が主張することを「達成できたと言えるか」という問いに変え、見落とすと起きる被害の種類ごとに問いを立てる
-tools: Read, Grep, Glob, LSP
+tools: Read, Grep, Glob, LSP, Skill
 inputs: [instructions, investigation, plan]
 outputs: [plan-checklist]
 outcomes:

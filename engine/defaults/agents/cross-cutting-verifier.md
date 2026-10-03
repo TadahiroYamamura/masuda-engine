@@ -1,7 +1,7 @@
 ---
 name: cross-cutting-verifier
 description: 横断的な問題の候補を確かめ、本当の問題だけを指摘にする
-tools: Read, Grep, Glob, Bash, LSP
+tools: Read, Grep, Glob, Bash, LSP, Skill
 inputs: [cross-cutting-candidates]
 outputs: [findings]
 outcomes:

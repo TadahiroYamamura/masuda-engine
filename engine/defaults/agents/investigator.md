@@ -1,7 +1,7 @@
 ---
 name: investigator
 description: 指示書を読み、変更に必要な事実をリポジトリから調べる
-tools: Read, Grep, Glob, Bash, LSP
+tools: Read, Grep, Glob, Bash, LSP, Skill
 inputs: [instructions]
 outputs: [investigation]
 outcomes:

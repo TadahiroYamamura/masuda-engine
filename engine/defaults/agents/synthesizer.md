@@ -1,7 +1,7 @@
 ---
 name: synthesizer
 description: 指摘の一覧から、人間が読むレビューのレポートを書く
-tools: Read, Grep, Glob
+tools: Read, Grep, Glob, Skill
 inputs: [findings, diff]
 outputs: [report]
 outcomes:

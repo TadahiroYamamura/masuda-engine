@@ -1,7 +1,7 @@
 ---
 name: plan-reviser
 description: 計画に立てられた問いに答え、答えに合わせて計画を直す
-tools: Read, Grep, Glob, Bash, LSP
+tools: Read, Grep, Glob, Bash, LSP, Skill
 inputs: [instructions, investigation, plan, plan-checklist]
 outputs: [plan]
 outcomes:

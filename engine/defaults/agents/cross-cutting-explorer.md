@@ -1,7 +1,7 @@
 ---
 name: cross-cutting-explorer
 description: 観点に分けにくい横断的な問題の候補を探す
-tools: Read, Grep, Glob, Bash, LSP
+tools: Read, Grep, Glob, Bash, LSP, Skill
 inputs: [diff]
 outputs: [cross-cutting-candidates]
 outcomes:

@@ -1,7 +1,7 @@
 ---
 name: reviewer
 description: すべての観点に沿って差分をレビューし、指摘を書く
-tools: Read, Grep, Glob, LSP
+tools: Read, Grep, Glob, LSP, Skill
 inputs: [diff, comment-manifest]
 outputs: [findings]
 outcomes:

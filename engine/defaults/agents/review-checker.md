@@ -1,7 +1,7 @@
 ---
 name: review-checker
 description: 全観点のレビューの指摘が正確かをまとめて確かめる
-tools: Read, Grep, Glob, LSP
+tools: Read, Grep, Glob, LSP, Skill
 inputs: [diff, findings]
 outputs: [findings]
 outcomes:
