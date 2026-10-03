@@ -1,0 +1,89 @@
+# 小さな修正向けの軽いワークフロー。developとの違い:
+# - 調査と計画を1セッション（quick-planner）で済ませる。承認済み計画の前に
+#   書き込めるエージェントへ到達できないため、まとめられるのは計画まで
+# - ステップごとの途中レビューとinterimゲートを置かない
+# - 最終レビューは観点レビューだけで、横断チェックを置かない
+# - レポートを書かない。人間はreviewゲートで差分とstagingのコメント（指摘）を見る
+# - 指示が曖昧で計画を立てられないときは、end:needs_humanで人間へ戻す
+version: 1
+inputs: [instructions]
+start: plan
+nodes:
+  plan:
+    type: agent
+    role: agents/quick-planner
+    max: 3
+    next:
+      done: approve-plan
+      out_of_scope: end:out_of_scope
+      needs_human: end:needs_human
+  approve-plan:
+    type: approval
+    gate: plan
+    target: plan
+    next:
+      approved: implement
+      rejected: plan
+  implement:
+    type: foreach
+    over: steps
+    body: workflows/fix/build-step
+    next:
+      done: review
+      stuck: approve-plan
+  review:
+    type: workflow
+    workflow: workflows/review/perspectives
+    next:
+      done: fix
+      clean: review-commit
+  fix:
+    type: agent
+    role: agents/fixer
+    max: 3
+    next:
+      done: recheck
+      nothing_to_fix: review-commit
+      cannot_fix: review-commit
+      exhausted: review-commit
+  recheck:
+    type: agent
+    role: agents/rechecker
+    next:
+      done: review-commit
+      unresolved: fix
+      exhausted: review-commit
+  review-commit:
+    type: commit
+    scope: plan
+    next:
+      done: approve-review
+      rejected: rework
+  approve-review:
+    type: approval
+    gate: review
+    target: diff
+    next:
+      approved: publish
+      rejected: rework
+  rework:
+    type: agent
+    role: agents/implementer
+    next:
+      done: rework-test
+      stuck: end:stuck
+  rework-test:
+    type: exec
+    command: ["/masuda/checks/test"]
+    next:
+      done: rework-commit
+      failed: rework
+  rework-commit:
+    type: commit
+    scope: plan
+    next:
+      done: review
+      rejected: rework
+  publish:
+    type: publish
+    next: end
