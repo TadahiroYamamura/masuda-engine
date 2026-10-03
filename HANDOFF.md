@@ -1,19 +1,27 @@
 # HANDOFF
 ## 作業項目
-E13（masuda #69、契約変更・承認済み）: 役定義のfrontmatterに`model`・`effort`を書けるようにした。
+E14（engine #10、masuda #68の計測）: 同梱`develop`の途中レビューを外し、ゲートの却下を直前の役へ戻した。契約（`engine/api.go`・`docs/workflow-schema.md`）は変えていない。
 
-- `077256e` `engine/api.go`の`Agent`に`Model`・`Effort`（省略は空文字列）。`engine/parse_agent.go`で読み込み: `model`は空でない文字列のみ検査（別名・フルID・`inherit`を通す）、`effort`は`low`・`medium`・`high`・`xhigh`・`max`以外を`effort: must be one of low, medium, high, xhigh, max (line N)`で拒否（リスト等スカラーでない値も同じメッセージ）。`AgentTask`には足していない（`AgentTask.Agent`で届く）。テスト`TestAgentModelAndEffort`（サブテスト名は日本語の文）を`engine/load_test.go`に追加
-- `3bdda50` `docs/workflow-schema.md`: エージェント定義の例に`model: sonnet`・`effort: low`、箇条書きに指示書の文、「続き」に起動時の`model`・`effort`のまま動く旨を1行
-- 同梱の役（`engine/defaults/agents/*.md`）・`bundled_test.go`・`continues`の検査は変えていない
+- `a77af38` `workflows/implement/build-step`を`implement`→`test`→`commit`に（`workflows/fix/build-step`と同一内容）。`workflows/implement/interim-review`を削除。ゲート名`interim`は予約のまま
+- `e0bd292` `approve-plan.rejected`を新ノード`revise-rejected`（`agents/plan-reviser`、`max: 3`、遷移は`revise-answered`と同じ）へ。`plan-reviser.md`に「## 人間の却下理由」の節を追加
+- `1c281ae` `rework`に`continues: agents/implementer`、`rework-commit.done`を`approve-review`へ（最終レビューの段は通さない）。`review-commit.rejected: rework`も結果として`approve-review`へ戻る
+- テスト（`engine/bundled_test.go`）:
+  - `TestBundledDevelopReviewsInOneSessionPerRole`を`Test同梱のdevelopは役ごとに1セッションで進み却下を直前の役へ戻す`に改名・改修。3ステップがimplement→test→commit、planゲート却下→`revise-rejected`（feedbackに却下理由、直前のreviseの`plan`とquestionsの`plan-checklist`を読む）、reviewゲート却下→`rework`（最後のimplementerの続き、feedbackに却下理由）→`approve-review`。コミットは step×3・plan×2
+  - `TestBundledBuildStepDisputeEndsAtInterimGate`（build-stepのfix/recheckで反論の台帳を確かめていた）を、同じ仕組みが残る最終レビューの`fix`→`recheck`へ移し`Test同梱のdevelopの最終の修正で反論が続くと3回でレポートへ進む`に改名
+  - `checkContinues`はdevelopの`rework`も直前のimplementerに続くことを確かめる。同梱から消えたワークフローの列挙に`workflows/implement/interim-review`を追加
 ## 完了した契約テスト
 C-E1〜C-E9は無修正で緑（`go build ./... && go vet ./... && go test -count=1 ./...`）。
-判定の分岐をわざと壊して`TestAgentModelAndEffort`が落ちることを確かめて戻した: effortの値検査を無効化／列挙から`xhigh`を外す／`model`の空検査を外す／`Model`・`Effort`をAgentに入れない、の5通り。
+定義をわざと壊して歩行テストが落ちることを確かめて戻した: `approve-plan.rejected`を`plan`に戻す／`revise-rejected`の役を`planner`にする／`rework-commit.done`を`review`に戻す／`rework`の`continues`を外す／`rework-test.done`を`approve-review`にしてコミットを飛ばす、の5通り。
 ## 未完と理由
 - なし
 ## 次の一手
-- masuda側のM14b: `internal/guest.AgentFile`と`docs/guest-protocol.md`で`model`・`effort`をサブエージェント定義のfrontmatterへ書き出す。engineの版上げ（`go get ...@main`）が先に要る
+- masuda側: engineの版上げと、`docs/user/workflows.md`の同梱ワークフローの説明（途中レビュー・却下の戻り先）を直す
+- 下の「注意点」の残った記述をどうするか監督が決める
 ## 注意点
-- `model`の値は検査しないので、打ち間違い（例: `sonet`）はゲストのClaude Code側でしか分からない（意図どおり）
+- 指示書の範囲外として次の記述を残した（途中レビューを前提にした文で、同梱では当たらなくなった）
+  - `engine/defaults/workflows/fix.yaml`冒頭コメント「developとの違い: ステップごとの途中レビューとinterimゲートを置かない」（`fix`は変えない指示のため）。今はdevelopとの違いではなくなった
+  - `agents/reviewer.md`・`review-checker.md`（ノード名が`interim-`で始まるときの途中レビュー）、`rechecker.md`（「ステップの途中レビューの後では」）、`synthesizer.md`（「ステップごとの途中レビュー」）。利用者の定義が`interim-`のノードを使えば今も当たる
+- `docs/workflow-schema.md`の`step-diff`の説明にある「interim gateのように」はゲート名の例なので残した
 - `../masuda`は変更していない。pushしていない
 ## 契約への提案
-- E13で`Agent.Model`・`Agent.Effort`を足した（承認済み）。masuda側は`internal/guest.AgentFile`と`docs/guest-protocol.md`で追従する（M14b）
+- なし
