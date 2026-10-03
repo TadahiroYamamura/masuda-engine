@@ -41,9 +41,9 @@ func checkCommentManifest(t *testing.T, i int, task *AgentTask) {
 		if !slices.Contains(task.Outputs, "comment-manifest") {
 			t.Fatalf("step %d: the %s must write comment-manifest, got %v", i, task.Agent.Name, task.Outputs)
 		}
-	case "reviewer":
+	case "reviewer", "review-checker":
 		if _, ok := task.Inputs["comment-manifest"]; !ok {
-			t.Fatalf("step %d: the reviewer must read comment-manifest, got %+v", i, task.Inputs)
+			t.Fatalf("step %d: the %s must read comment-manifest, got %+v", i, task.Agent.Name, task.Inputs)
 		}
 	}
 }

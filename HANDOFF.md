@@ -7,6 +7,8 @@
 - `docs/workflow-schema.md`の`tools`の記述は「`Write`か`Edit`を持つ（または省略）エージェントが『書き込める』」で、`Skill`が書き込みに数えられないことは既に読めるので変えていない
 追加: 実機でplan-questionsが`plan`の`checks`（問いと答えの欄）と対象リポジトリの`.masuda/settings.json`の`checks`（ビルド・テストのコマンド）を取り違え、「`plan`の`checks`が空配列だが検査コマンドを載せなくてよいか」と問うたため、`plan-questions.md`と`plan-reviser.md`に両者が無関係であること（`plan`の`checks`は最初の計画では`[]`）を明記した（別コミット）。
 
+追加: `review-checker.md`の`inputs`に`comment-manifest`を足し、コメントに関する指摘（`comment-criteria`等）を検証するときに一覧と差分の照合を確かめるよう本文に書いた（別コミット）。`bundled_test.go`の`checkCommentManifest`でreview-checkerの`Inputs`も確かめる。`workflows/review`でも累積データなので`Set.Check`は通る
+
 ## 完了した契約テスト
 C-E1〜C-E9すべて緑（`go build ./... && go vet ./... && go test -count=1 ./...`）。`TestBundled*`も緑
 ## 未完と理由
@@ -17,6 +19,7 @@ C-E1〜C-E9すべて緑（`go build ./... && go vet ./... && go test -count=1 ./
 ## 注意点
 - この変更はmasuda側の`.masuda/claude/`（と`.masuda/claude.local/`）のスキル配置と対になる。それが無いとゲストにスキルが無く、`Skill`は呼ばれない
 - 対象リポジトリで`agents/*.md`を差し替えている場合、差し替えた定義の`tools`に`Skill`が無ければその役はスキルを呼べない。また差し替えた役が同梱の役を`continues`する（またはその逆の）組み合わせでは、`tools`の部分集合の検査に`Skill`が効くことがある
+- 解消済み: `0300b66`のHANDOFFにあった「review-checkerは`comment-manifest`を入力に取らず、`comment-criteria`の指摘の検証で一覧を読めない」は、review-checkerの`inputs`に足して解消した。masuda側で`agents/review-checker.md`に足す必要は無い
 ## 契約への提案
 - 前回からの持ち越し: 取り下げられた指摘をレポートで見せるため、累積データの`withdrawn`の要素を保存時に捨てず、読み出し・foreachでだけ除き、synthesizerのような「全部を読む」入力を別に設けるか
 - 前回からの持ち越し: 同梱スキーマの列挙から`selected-perspectives`を外すか、`workflow`ノードに`inputs`を書けるようにするか（reviewerへ計画を渡す手段）
