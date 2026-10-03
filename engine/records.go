@@ -68,6 +68,9 @@ type occurrence struct {
 	Inputs  map[string]DataRef `json:"inputs,omitempty"`
 	Outputs []string           `json:"outputs,omitempty"`
 	Policy  *Policy            `json:"policy,omitempty"`
+	// Continues も進入時に決めて残す。後から別の出現が終わっても、再計算した
+	// 位置が同じ宛先のタスクを渡すようにするため。
+	Continues string `json:"continues,omitempty"`
 	// Base is the snapshot the worktree is compared against: for agent and
 	// exec, where the node started; for commit, where the work being
 	// committed started. BaseHash is ChangedSince(Base) at entry, kept for
@@ -257,6 +260,26 @@ func (r *records) last(frameID string) *occurrence {
 		return nil
 	}
 	return occs[len(occs)-1]
+}
+
+// lastRun は、roleを担当したagentノードの出現のうち終了済みで出現IDが最大の
+// もの（フレームを問わない）。上限で進入したexhaustedの出現はサブエージェントを
+// 起動していないので除く。
+func (r *records) lastRun(set *Set, role string) string {
+	for i := len(r.occs) - 1; i >= 0; i-- {
+		o := r.occs[i]
+		if o.Exhausted || r.results[o.ID] == nil {
+			continue
+		}
+		w := set.Workflows[o.Workflow]
+		if w == nil {
+			continue
+		}
+		if n := w.Nodes[o.Node]; n != nil && n.Type == NodeAgent && n.Role == role {
+			return o.ID
+		}
+	}
+	return ""
 }
 
 func (r *records) nextID() string { return fmt.Sprintf("%0*d", idWidth, r.maxID+1) }

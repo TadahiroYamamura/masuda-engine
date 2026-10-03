@@ -18,7 +18,7 @@ var (
 // allowedKeys is, per node type, every key besides `type` and `next` that the
 // node may carry (docs/workflow-schema.md "種類ごとのキー").
 var allowedKeys = map[NodeType]map[string]bool{
-	NodeAgent:    keySet("role", "max", "inputs", "outputs", "egress", "secrets"),
+	NodeAgent:    keySet("role", "continues", "max", "inputs", "outputs", "egress", "secrets"),
 	NodeExec:     keySet("command", "inputs", "outputs", "max", "egress", "secrets", "timeout"),
 	NodeApproval: keySet("gate", "target"),
 	NodeQuestion: keySet("role", "questions", "outputs"),
@@ -206,6 +206,8 @@ func parseNode(ref, id string, v *yaml.Node, le *loadError) *Node {
 			}
 		case "role":
 			n.Role, err = refValue(val, "agents")
+		case "continues":
+			n.Continues, err = refValue(val, "agents")
 		case "command":
 			n.Command, err = scalarList(val)
 			if err == nil && len(n.Command) == 0 {

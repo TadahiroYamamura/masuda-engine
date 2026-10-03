@@ -95,6 +95,9 @@ type Node struct {
 
 	// agent / question(with role)
 	Role string
+	// agent: このタスクを、その役（agents/<name>）が最後に担当した出現の
+	// サブエージェントに続けて渡す。空なら無し。
+	Continues string
 	// exec
 	Command []string
 	Timeout time.Duration
@@ -239,6 +242,13 @@ type AgentTask struct {
 	Outputs    []string           // names the agent must write
 	Feedback   string             // from the previous node/gate, if any
 	Policy     Policy
+	// Continues は、このタスクを続けて渡す宛先の出現ID。ノードが`continues`
+	// を書いていれば、その役を担当したagentノードの出現のうち、終了済みで
+	// 出現IDが最大のもの（フレームを問わない）。書いていないか該当が無ければ
+	// 空。続きが成立したか（VMの再開後でサブエージェントがいない等）は
+	// Runner／ゲストの事情で、エンジンは関知しない。Inputsは新しい
+	// サブエージェントが単独でこなせる完全なものなので、どちらでも成立する。
+	Continues string
 }
 
 // CommandTask is one exec node run.

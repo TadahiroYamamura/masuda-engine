@@ -297,6 +297,9 @@ func (m *mover) prepareAgent(fr *frame, n *Node, occ *occurrence) error {
 			occ.Outputs = append(occ.Outputs, name)
 		}
 	}
+	if n.Continues != "" {
+		occ.Continues = m.recs.lastRun(m.e.set, n.Continues)
+	}
 	p := Policy{Egress: n.Egress, Secrets: n.Secrets}
 	occ.Policy = &p
 	return m.setPolicy(occ, p)
@@ -408,6 +411,7 @@ func (e *Engine) task(run RunID, o *occurrence, n *Node) *AgentTask {
 	t := &AgentTask{
 		Run: run, Occurrence: o.ID, Workflow: o.Workflow, Node: o.Node,
 		Agent: e.set.agentFor(n.Role), Inputs: o.Inputs, Outputs: o.Outputs, Feedback: o.Feedback,
+		Continues: o.Continues,
 	}
 	if o.Policy != nil {
 		t.Policy = *o.Policy

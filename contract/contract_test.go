@@ -959,3 +959,110 @@ func TestCE7_BundledDefinitionsCheckAndDevelopReachesPublish(t *testing.T) {
 	}
 	t.Fatalf("develop did not finish; calls=%v", st.calls)
 }
+
+// ---------------------------------------------------------------------------
+// C-E8: continues
+// ---------------------------------------------------------------------------
+
+func TestCE8_ContinuesPointsAtTheRolesLatestFinishedOccurrence(t *testing.T) {
+	set := mustLoad(t, repoFS(map[string]string{
+		"agents/a.md": agentMD("a", "Read, Grep, Glob", nil),
+		"agents/b.md": agentMD("b", "Read, Grep", nil),
+		"workflows/x.yaml": "version: 1\nstart: first-b\nnodes:\n" +
+			"  first-b: {type: agent, role: agents/b, continues: agents/a, next: call}\n" +
+			"  call: {type: workflow, workflow: workflows/y, next: second-b}\n" +
+			"  second-b: {type: agent, role: agents/b, continues: agents/a, next: plain}\n" +
+			"  plain: {type: agent, role: agents/b, next: end}\n",
+		"workflows/y.yaml": "version: 1\nstart: a1\nnodes:\n" +
+			"  a1: {type: agent, role: agents/a, next: a2}\n" +
+			"  a2: {type: agent, role: agents/a, next: end}\n",
+	}))
+	mustCheck(t, set, "workflows/x")
+	st := newStub()
+	e, _ := newEngine(t, set, st)
+	run := engine.RunID("ws8")
+	ctx := context.Background()
+	if err := e.Start(ctx, run, "workflows/x", nil); err != nil {
+		t.Fatal(err)
+	}
+	report := func(task *engine.AgentTask) {
+		t.Helper()
+		if err := e.ReportResult(ctx, run, task.Occurrence, "done", ""); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	first := wantAgent(t, advance(t, e, run), "b")
+	if first.Continues != "" {
+		t.Fatalf("no occurrence of agents/a yet, but Continues = %q", first.Continues)
+	}
+	report(first)
+	a1 := wantAgent(t, advance(t, e, run), "a")
+	report(a1)
+	a2 := wantAgent(t, advance(t, e, run), "a")
+	report(a2)
+	second := wantAgent(t, advance(t, e, run), "b")
+	if second.Continues != a2.Occurrence {
+		t.Fatalf("Continues = %q, want the latest finished agents/a occurrence %q (a1 was %q)", second.Continues, a2.Occurrence, a1.Occurrence)
+	}
+	if again := wantAgent(t, advance(t, e, run), "b"); again.Continues != second.Continues {
+		t.Fatalf("a repeated Advance must hand out the same Continues, got %q", again.Continues)
+	}
+	report(second)
+	if plain := wantAgent(t, advance(t, e, run), "b"); plain.Continues != "" {
+		t.Fatalf("a node without continues got Continues = %q", plain.Continues)
+	}
+}
+
+func TestCE8_CheckRejectsUnsafeOrUnreachableContinues(t *testing.T) {
+	cases := map[string]map[string]string{
+		"tools not a subset": {
+			"agents/r.md":      agentMD("r", "Read, Grep", nil),
+			"agents/v.md":      agentMD("v", "Read, Grep, Glob", nil),
+			"workflows/x.yaml": "version: 1\nstart: r\nnodes:\n  r: {type: agent, role: agents/r, next: v}\n  v: {type: agent, role: agents/v, continues: agents/r, next: end}\n",
+		},
+		"all tools continuing limited tools": {
+			"agents/r.md":      agentMD("r", "Read, Grep", nil),
+			"agents/all.md":    agentMD("all", "", nil),
+			"workflows/x.yaml": "version: 1\nstart: g\nnodes:\n  g: {type: approval, gate: plan, target: plan, next: {approved: r, rejected: end}}\n  r: {type: agent, role: agents/r, next: v}\n  v: {type: agent, role: agents/all, continues: agents/r, next: end}\n",
+		},
+		"continued role not reachable": {
+			"agents/r.md":      agentMD("r", "Read, Grep", nil),
+			"agents/v.md":      agentMD("v", "Read", nil),
+			"workflows/x.yaml": "version: 1\nstart: v\nnodes:\n  v: {type: agent, role: agents/v, continues: agents/r, next: end}\n",
+		},
+		"continued role missing": {
+			"agents/v.md":      agentMD("v", "Read", nil),
+			"workflows/x.yaml": "version: 1\nstart: v\nnodes:\n  v: {type: agent, role: agents/v, continues: agents/ghost, next: end}\n",
+		},
+	}
+	for name, files := range cases {
+		t.Run(name, func(t *testing.T) {
+			set, err := engine.Load(repoFS(files), engine.Bundled())
+			if err != nil {
+				t.Fatalf("Load: %v", err)
+			}
+			p := set.Check("workflows/x")
+			if len(p) == 0 {
+				t.Fatalf("Check found nothing")
+			}
+			for _, x := range p {
+				if strings.Contains(x.Message, "continues") {
+					return
+				}
+			}
+			t.Fatalf("Check did not name continues: %+v", p)
+		})
+	}
+	set := mustLoad(t, repoFS(map[string]string{
+		"agents/r.md":      agentMD("r", "Read, Grep, Glob", nil),
+		"agents/v.md":      agentMD("v", "Read, Grep", nil),
+		"workflows/x.yaml": "version: 1\nstart: r\nnodes:\n  r: {type: agent, role: agents/r, next: v}\n  v: {type: agent, role: agents/v, continues: agents/r, next: end}\n",
+	}))
+	mustCheck(t, set, "workflows/x")
+	if _, err := engine.Load(repoFS(map[string]string{
+		"workflows/x.yaml": "version: 1\nstart: e\nnodes:\n  e: {type: exec, command: [/bin/true], continues: agents/r, next: {done: end, failed: end}}\n",
+	}), engine.Bundled()); err == nil {
+		t.Fatal("Load accepted continues on an exec node")
+	}
+}

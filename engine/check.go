@@ -2,6 +2,7 @@ package engine
 
 import (
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 )
@@ -45,6 +46,7 @@ func (s *Set) check(root string) []Problem {
 		c.routes(s.Workflows[path])
 		c.unboundedCycles(s.Workflows[path])
 	}
+	c.continuations(workflows)
 	newFlow(c).run()
 	newAvail(c).run()
 	c.exports(workflows)
@@ -116,6 +118,9 @@ func (c *checker) references(w *Workflow) {
 		n := w.Nodes[id]
 		if n.Role != "" && c.set.agentFor(n.Role) == nil {
 			c.fail(w.Path, id, "role %s: no such agent", n.Role)
+		}
+		if n.Continues != "" && c.set.agentFor(n.Continues) == nil {
+			c.fail(w.Path, id, "continues %s: no such agent", n.Continues)
 		}
 		if cl := callee(n); cl != "" && c.set.Workflows[cl] == nil {
 			c.fail(w.Path, id, "%s: no such workflow", cl)
@@ -283,6 +288,66 @@ func (c *checker) routes(w *Workflow) {
 			}
 		}
 	}
+}
+
+// continuations は`continues`の宛先を検査する。続けられる役のagentノードが
+// rootから到達できるワークフローに無ければ、続ける相手が現れえない。続ける側の
+// toolsが続けられる側の部分集合でなければならないのは、サブエージェントの道具は
+// 起動時に固定され続きで増やせないため。逆を許すと、読み取り専用で起動した
+// サブエージェントに書き込める役のタスクが渡り、書き込めるかの判定（Tools）と
+// 実際に使える道具が食い違う。
+func (c *checker) continuations(workflows []string) {
+	runs := map[string]bool{}
+	for _, path := range workflows {
+		w := c.set.Workflows[path]
+		for _, id := range w.Order {
+			if n := w.Nodes[id]; n.Type == NodeAgent {
+				runs[n.Role] = true
+			}
+		}
+	}
+	for _, path := range workflows {
+		w := c.set.Workflows[path]
+		for _, id := range w.Order {
+			n := w.Nodes[id]
+			if n.Continues == "" {
+				continue
+			}
+			if !runs[n.Continues] {
+				c.fail(path, id, "continues %s: no agent node reachable from %s runs that role", n.Continues, c.root)
+			}
+			if missing, ok := toolsWithin(c.set.agentFor(n.Role), c.set.agentFor(n.Continues)); !ok {
+				c.fail(path, id, "continues %s: %s's tools must be a subset of %s's %s, but it also has %s (a continued subagent keeps the tools it started with)",
+					n.Continues, n.Role, n.Continues, toolList(c.set.agentFor(n.Continues).Tools), missing)
+			}
+		}
+	}
+}
+
+func toolsWithin(a, b *Agent) (string, bool) {
+	if b.Tools == nil {
+		return "", true
+	}
+	if a.Tools == nil {
+		return "(all tools)", false
+	}
+	var missing []string
+	for _, t := range a.Tools {
+		if !slices.Contains(b.Tools, t) {
+			missing = append(missing, t)
+		}
+	}
+	if len(missing) > 0 {
+		return "[" + strings.Join(missing, ", ") + "]", false
+	}
+	return "", true
+}
+
+func toolList(tools []string) string {
+	if tools == nil {
+		return "(all tools)"
+	}
+	return "[" + strings.Join(tools, ", ") + "]"
 }
 
 // unboundedCycles requires every cycle within a workflow to pass an approval

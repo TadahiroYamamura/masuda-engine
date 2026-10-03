@@ -63,7 +63,7 @@ nodes:
 
 | type | 必須 | 任意 | outcome |
 |---|---|---|---|
-| `agent` | `role` | `max`、`inputs`、`outputs`、`egress`、`secrets` | エージェント定義が宣言したもの + `exhausted` |
+| `agent` | `role` | `continues`、`max`、`inputs`、`outputs`、`egress`、`secrets` | エージェント定義が宣言したもの + `exhausted` |
 | `exec` | `command`（絶対パスのargv配列） | `inputs`、`outputs`、`max`、`egress`、`secrets`、`timeout`（Go duration） | `done`（exit 0）、`failed`、`exhausted` |
 | `approval` | `gate`、`target`（`plan`/`diff`/`step-diff`/データ名） | — | `approved`、`rejected` |
 | `question` | `role`または`questions`、`outputs`（1つ） | — | `answered` |
@@ -86,6 +86,20 @@ nodes:
 - `question.questions`は固定の質問。エンジンが`Runner.OpenQuestion`で開き、`Engine.Answer`で答えが来たら`outputs`の1つめのデータ名にJSON（id→answer）で保存して`answered`で遷移する
 - `question.role`を書くと、エージェントがタスクとして質問を組み立て、`ask_human`（ホストが`Engine.Answer`へ仲介する）で人間に聞く。1タスク中に複数回聞いてよく、エンジンは答えをその出現に溜める。エージェントが`done`で報告したとき、溜まった答え（id→answer、後勝ち）を`outputs`の1つめに保存し、ノードは`answered`で遷移する（`done`は`answered`に読み替える）。答えが1つも無いまま`done`なら無効な結果として差し戻す。エージェント定義の`outcomes`は`done`のみでよい
 - ゲート名`triage`・`deviation`は予約
+- `agent.continues`は役の参照（`agents/<役>`）。下の「続き」を参照
+
+### 続き（continues）
+
+```yaml
+  fix:
+    type: agent
+    role: agents/fixer
+    continues: agents/implementer
+```
+
+- 意味: 「このrunでその役が最後に担当した出現（任意のフレーム。agentノードの出現のうち終了済みで出現IDが最大のもの）のサブエージェントに、このタスクを続けて渡す。該当する出現が無ければ通常どおり新しく起動する」
+- 宛先の出現はノードへの進入時に決まり、`AgentTask.Continues`で渡る（下の「エンジンが用意するもの」）。エンジンが決めるのは宛先の出現だけで、続きが成立するか（VMの再開後でサブエージェントがいない等）はRunner／ゲストの事情。成立しなければゲストは新しく起動する
+- **記憶はあれば使う。無くても成立する入力を常に渡す。** 続きのタスクの入力（`inputs`・feedback・役の本文）は、新しいサブエージェントが単独でこなせる完全なものにする。続けられたサブエージェントには、続きのタスクで役の指示が切り替わる
 
 ### スナップショットと計画外変更の検出の基準点
 
@@ -105,6 +119,7 @@ nodes:
 - 承認ノードも`max`付きノードも含まない閉路は拒否する
 - 入力・`with`・`inputs`が、そのノードに至るどの経路でも用意済みであること
 - 承認済み計画が無い状態で、書き込めるエージェントや`commit`に到達しない
+- `continues`: 続ける側の役の`tools`は、続けられる役の`tools`の部分集合であること（`tools`省略＝全ツールは、続けられる側も省略のときだけ可）。サブエージェントの道具は起動時に固定され、続きで増やせないため。書き込めない役を書き込める役で続けることを禁じ、上の「承認済み計画が無い状態で書き込めるエージェントへ到達しない」をすり抜けさせない。また、続けられる役のagentノードが、同じrootから到達可能なワークフローのどこかに無ければ拒否する
 - 未コミットの変更がある状態で`publish`に到達しない
 - `egress`・`secrets`は宣言の形だけ検査する（許可されているかはmasudaが実行時に見る）。`egress`の要素はホスト名（先頭の`*.`だけワイルドカード可）で、**ポートは書けない**（masudaの`settings.json`の`egress`と同じ形）
 
@@ -142,7 +157,11 @@ outcomes:
 - 同梱の`findings`は累積データ。旧設計の「指摘の台帳」に当たる
 
 - `schemas/<data>.json`があるデータは、受け取る境界でJSON Schema（draft 2020-12）で検証する
-- 同梱スキーマ: `plan`（goal、summary、steps[]（number、title、description、tests[]、files[]）、alternatives[]（option、reason）、risks[]、expected_byproducts[]）、`findings`（累積。要素は`id`、file、line、severity、autofix、message…）、`commit-message`、`selected-perspectives`、`answers`
+- 同梱スキーマ: `plan`（goal、summary、steps[]（number、title、description、tests[]、files[]）、alternatives[]（option、reason）、risks[]、expected_byproducts[]）、`findings`（累積。要素は`id`、file、line、severity、autofix、message、suggestion、withdrawn、disputed（修正者が指摘に反論した）、response（反論の理由）…）、`commit-message`、`selected-perspectives`、`answers`
 - スキーマのトップレベルが`string`型なら、出力ファイルの内容そのものを1つの文字列として検証する（JSONとしてパースしない）。`commit-message`がこれに当たる
 - スキーマが無いデータは空でないことだけ確かめる
-- エンジンが用意するデータ: `diff`、`step-diff`、`fix-diff`（unified diff）
+
+## エンジンが用意するもの
+
+- データ: `diff`、`step-diff`、`fix-diff`（unified diff）
+- `AgentTask.Continues`: ノードが`continues`を書いていれば、続けて渡す宛先の出現ID（上の「続き」）。書いていないか該当する出現が無ければ空。resumeで再発行されるタスクも同じ宛先を指す
