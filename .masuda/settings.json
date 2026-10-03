@@ -1,0 +1,17 @@
+{
+  "image": "default",
+  "egress": [],
+  "secrets": [],
+  "envFiles": [],
+  "checks": {
+    "test": "go build ./... && go vet ./... && go test ./..."
+  },
+  "claudeSettings": {
+    "model": "opus"
+  },
+  "images": {
+    "default": {
+      "diskMiB": 8192
+    }
+  }
+}

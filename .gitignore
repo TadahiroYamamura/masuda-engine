@@ -1,1 +1,3 @@
 .env
+.masuda/settings.local.json
+.masuda/claude.local/
