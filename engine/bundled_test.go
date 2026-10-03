@@ -433,7 +433,6 @@ func TestBundledDevelopAsksOpenChecksBeforeThePlanGate(t *testing.T) {
 			"investigation":  []byte("i"),
 			"plan":           []byte(plan),
 			"plan-checklist": []byte(checklist),
-			"answers":        []byte(`{"SPEC-1":"旧形式は読まない"}`),
 		}},
 	}}
 	e := New(set, &kvStore{m: map[string][]byte{}}, r, Options{})

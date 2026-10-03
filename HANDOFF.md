@@ -23,7 +23,7 @@ C-E1〜C-E9すべて緑（`go build ./... && go vet ./... && go test -count=1 ./
   - `go.mod`のengineの版上げ（`go get github.com/TadahiroYamamura/masuda-engine@<tagまたはmain> && go mod tidy`）
   - 同梱エージェントの個数は15（数や一覧を持つ箇所・テストがあれば合わせる）
   - masudaの契約テスト・クライアントのテスト（`contract/contract_test.go`・`cmd/masuda/client_test.go`）で計画のJSONを書いていれば`"checks":[]`が要る。developを歩かせるなら`plan-checklist`の出力も要る
-- plan-interviewerは指定どおりエージェント定義に`outputs: [answers]`を持つ。定義の出力はタスクの宣言出力になり`done`で必須なので、本文で`ask_human`で得た答えの写しを`write_output("answers")`で書かせている。エンジンは溜めた答えで同じ`answers`を上書き保存するので写しは使われない。定義から`outputs`を外せば写しは不要になる（`question.role`の既存のテストの役は`outputs`を持たない）
+- plan-interviewerはエージェント定義に`outputs`を持たない（fix(defaults)で外した）。答えの保存先は`ask`ノードの`outputs: [answers]`で、エンジンが`ask_human`で溜めた答えを保存する。役は聞いて`done`で終えるだけ
 - reviseが`needs_human`で終えるとき、openを含む`plan`を書くよう本文で求めている（done以外で書いた出力も保存される）。書かずに終えるとplan-interviewerはplannerの`checks: []`の計画を読み、聞く問いが無くなる
 - 進入回数は人間の判断（ゲート）ごとに数え直されるので、approve-planの差し戻しを繰り返してもquestions・reviseは上限に掛からない。questionsの`exhausted`には行き先が無い（調査のやり直しが重なるとinvestigateが先に上限に達するので、既存のinvestigateと同じ扱いにした）
 ## 契約への提案
