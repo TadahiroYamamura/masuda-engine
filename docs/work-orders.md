@@ -126,6 +126,20 @@ masudaの開発作業をmasudaのrunで進める体制（masudaのマイルス�
 - `HANDOFF.md`の「契約への提案」には「E13で`Agent.Model`・`Agent.Effort`を足した（承認済み）。masuda側は`internal/guest.AgentFile`と`docs/guest-protocol.md`で追従する（M14b）」と書く
 - 禁止: `git push`、`../masuda`の変更、新しい依存の追加
 
+## E14. 同梱`develop`の見直し: 途中レビューを外し、ゲートの却下を直前の役へ戻す（masuda #68の計測、engine #10）
+
+背景: masuda自身でのdogfooding（2026-10-03、masuda #68のコメントに計測の表）で、`develop`は`fix`の数倍の時間とトークンがかかり、原因が工程の数にあると分かった。(1) ステップごとの途中レビュー（`implement/interim-review`）は記録の範囲で自動修正0件（見つけた低1件は`autofix: false`でfixerが動かず、最終レビューが同じ指摘を出して直した）。(2) plan gateの却下はplanner→plan-questions→reviser→interviewerを一式やり直して約12分、review gateの却下は最終レビューの全段をやり直して約30分。契約（`engine/api.go`・`docs/workflow-schema.md`）は変えない。同梱定義とその本文・テストだけを変える。
+
+- **`workflows/implement/build-step`**: `implement`→`test`→`commit`にする（`workflows/fix/build-step`と同じ形。`test`が`failed`なら`implement`へ）。`review`・`fix`・`recheck`・`approve-interim`のノードを消す。`workflows/implement/interim-review`は使われなくなるので定義ごと消し、同梱の列挙と`bundled_test.go`の歩行テスト（3ステップの歩行がinterimの結果を前提にしている）を新しい形に直す。ゲート名`interim`は予約の扱いのまま（利用者の定義が使ってよい）
+- **plan gateの却下**: `approve-plan.rejected`を`plan`（planner）ではなく、新しいノード`revise-rejected`（`role: agents/plan-reviser`、`max: 3`、遷移は`revise-answered`と同じ: `done: approve-plan`、`needs_human: ask`、`needs_more_investigation: investigate`、`exhausted: approve-plan`）へ。人間の却下理由は`feedback`で届く。`plan-reviser.md`の本文に「feedbackに人間の却下理由があるときは、それを最優先の問いとして扱い、`plan-checklist`のうち既に`addressed`の問いは答え直さない（却下理由で前提が変わったものだけ見直す）」を足す。`ask`→`revise-answered`の形は変えない
+- **review gateの却下**: `approve-review.rejected`は`rework`のままだが、`rework`を`role: agents/implementer`＋`continues: agents/implementer`にする（直前に実装したサブエージェントの続きで、人間の行コメント＝feedbackを直す。記憶が無くても成立する入力は今のまま）。`rework-test`→`rework-commit`の後は`review`（最終レビューの全段）へ戻さず、**`approve-review`へ直接**戻す（人間が自分の指摘が直ったかを差分で見る。レビューの全段は通さない。cross-cuttingもsynthesizerも通さない）。`review-commit.rejected: rework`（deviation gateの却下）は同じ`rework`を使うので、こちらも`approve-review`へ戻ることになる。それでよい（人間が直前に差分を見ている）
+- 最終レビューの段（`review`→`cross-cutting`→`fix`→`recheck`→`review-commit`→`report`→`approve-review`）は変えない。masuda #67（レビュー段階のpr-review-guide: `review-questions`・`review-answers`を`review`の前後に差し込む、fixerの`fix-log`、レポートのJSON化）はv0.3でこの段に入るので、ノード名と順序は保つ
+- `workflows/fix`は変えない（`fix`の`plan.rejected: plan`はquick-plannerが調査と計画を1セッションでやり直す形で、やり直しの範囲が小さい）
+- `docs/workflow-schema.md`に途中レビューやinterimの記述があれば直す（無ければ何もしない）。同梱ワークフローの説明がmasudaの`docs/user/workflows.md`にあるが、それはmasuda側で直す（engineでは触らない）
+- テスト（名前は日本語の文）: `bundled_test.go`の歩行テストを新しい`develop`に合わせる（3ステップがimplement→test→commitで進む、plan gateの却下が`revise-rejected`に入る、review gateの却下が`rework`→`rework-test`→`rework-commit`→`approve-review`に戻る）。判定の分岐をわざと壊して落ちることを確かめる
+- 検証: `go build ./... && go vet ./... && go test -count=1 ./...`が緑。契約テストC-E1〜C-E9は無修正で緑のまま
+- 禁止: `git push`、`../masuda`の変更、契約ファイルの変更、新しい依存の追加
+
 ## 契約テストの対応表
 
 | テスト | 項目 |
