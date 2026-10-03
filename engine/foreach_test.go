@@ -40,7 +40,7 @@ func (r *e5Runner) Diff(_ context.Context, _ RunID, kind DiffKind, from Snapshot
 	return nil
 }
 
-const e5Plan = `{"summary":"s","steps":[{"number":1,"description":"a","files":["a.go"]},{"number":2,"description":"b","files":["b.go"]},{"number":3,"description":"c","files":["c.go"]}],"expected_byproducts":[]}`
+const e5Plan = `{"goal":"g","summary":"s","steps":[{"number":1,"title":"t1","description":"a","tests":[],"files":["a.go"]},{"number":2,"title":"t2","description":"b","tests":[],"files":["b.go"]},{"number":3,"title":"t3","description":"c","tests":[],"files":["c.go"]}],"alternatives":[],"risks":[],"expected_byproducts":[]}`
 
 func e5Engine(t *testing.T, onIncomplete string) (*Engine, *e5Runner) {
 	t.Helper()
@@ -67,9 +67,9 @@ func e5Engine(t *testing.T, onIncomplete string) (*Engine, *e5Runner) {
 	}
 	r := &e5Runner{fakeRunner: fakeRunner{data: map[string][]byte{"/instructions": []byte("x")}, outputs: map[string][]byte{"plan": []byte(e5Plan)}}}
 	r.items = []Item{
-		{Key: "1", Input: "step", Content: []byte(`{"number":1,"description":"a","files":["a.go"]}`), Done: true},
-		{Key: "2", Input: "step", Content: []byte(`{"number":2,"description":"b","files":["b.go"]}`)},
-		{Key: "3", Input: "step", Content: []byte(`{"number":3,"description":"c","files":["c.go"]}`)},
+		{Key: "1", Input: "step", Content: []byte(`{"number":1,"title":"t1","description":"a","tests":[],"files":["a.go"]}`), Done: true},
+		{Key: "2", Input: "step", Content: []byte(`{"number":2,"title":"t2","description":"b","tests":[],"files":["b.go"]}`)},
+		{Key: "3", Input: "step", Content: []byte(`{"number":3,"title":"t3","description":"c","tests":[],"files":["c.go"]}`)},
 	}
 	e := New(set, &kvStore{m: map[string][]byte{}}, r, Options{})
 	ctx := context.Background()

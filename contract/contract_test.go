@@ -493,7 +493,7 @@ func linearSet(t *testing.T) *engine.Set {
 	return set
 }
 
-const validPlan = `{"summary":"do it","steps":[{"number":1,"description":"one","files":["a.go"]}],"expected_byproducts":[]}`
+const validPlan = `{"goal":"g","summary":"do it","steps":[{"number":1,"title":"t1","description":"one","tests":[],"files":["a.go"]}],"alternatives":[],"risks":[],"expected_byproducts":[]}`
 
 func startLinear(t *testing.T) (*engine.Engine, *stub, engine.RunID) {
 	set := linearSet(t)
@@ -739,13 +739,13 @@ func TestCE5_ForeachStepsCommitDeviationPublish(t *testing.T) {
 	if err := e.Start(ctx, run, "workflows/x", []string{"instructions"}); err != nil {
 		t.Fatal(err)
 	}
-	plan := `{"summary":"s","steps":[{"number":1,"description":"a","files":["a.go"]},{"number":2,"description":"b","files":["b.go"]}],"expected_byproducts":["go.sum"]}`
+	plan := `{"goal":"g","summary":"s","steps":[{"number":1,"title":"t1","description":"a","tests":[],"files":["a.go"]},{"number":2,"title":"t2","description":"b","tests":[],"files":["b.go"]}],"alternatives":[],"risks":[],"expected_byproducts":["go.sum"]}`
 	st.outputs["*/plan"] = []byte(plan)
 	st.outputs["*/commit-message"] = []byte("feat: step")
 	st.outputs["*/findings"] = []byte(`[]`)
 	st.items["steps"] = []engine.Item{
-		{Key: "1", Input: "step", Content: []byte(`{"number":1,"description":"a","files":["a.go"]}`)},
-		{Key: "2", Input: "step", Content: []byte(`{"number":2,"description":"b","files":["b.go"]}`)},
+		{Key: "1", Input: "step", Content: []byte(`{"number":1,"title":"t1","description":"a","tests":[],"files":["a.go"]}`)},
+		{Key: "2", Input: "step", Content: []byte(`{"number":2,"title":"t2","description":"b","tests":[],"files":["b.go"]}`)},
 	}
 
 	task := wantAgent(t, advance(t, e, run), "planner")
@@ -929,7 +929,7 @@ func TestCE7_BundledDefinitionsCheckAndDevelopReachesPublish(t *testing.T) {
 	st.outputs["*/findings"] = []byte(`[]`)
 	st.outputs["*/cross-cutting-candidates"] = []byte(`[]`)
 	st.outputs["*/report"] = []byte("# report\nclean\n")
-	st.items["steps"] = []engine.Item{{Key: "1", Input: "step", Content: []byte(`{"number":1,"description":"one","files":["a.go"]}`)}}
+	st.items["steps"] = []engine.Item{{Key: "1", Input: "step", Content: []byte(`{"number":1,"title":"t1","description":"one","tests":[],"files":["a.go"]}`)}}
 	st.changed = []string{"a.go"}
 
 	deadline := time.Now().Add(20 * time.Second)

@@ -3,8 +3,9 @@
   "title": "plan",
   "type": "object",
   "additionalProperties": false,
-  "required": ["summary", "steps"],
+  "required": ["goal", "summary", "steps", "alternatives", "risks"],
   "properties": {
+    "goal": {"type": "string", "pattern": "\\S"},
     "summary": {"type": "string", "pattern": "\\S"},
     "steps": {
       "type": "array",
@@ -12,10 +13,16 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["number", "description", "files"],
+        "required": ["number", "title", "description", "tests", "files"],
         "properties": {
           "number": {"type": "integer", "minimum": 1},
+          "title": {"type": "string", "pattern": "\\S"},
           "description": {"type": "string", "pattern": "\\S"},
+          "tests": {
+            "type": "array",
+            "minItems": 0,
+            "items": {"type": "string", "pattern": "\\S"}
+          },
           "files": {
             "type": "array",
             "minItems": 1,
@@ -23,6 +30,22 @@
           }
         }
       }
+    },
+    "alternatives": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["option", "reason"],
+        "properties": {
+          "option": {"type": "string", "pattern": "\\S"},
+          "reason": {"type": "string", "pattern": "\\S"}
+        }
+      }
+    },
+    "risks": {
+      "type": "array",
+      "items": {"type": "string", "pattern": "\\S"}
     },
     "expected_byproducts": {
       "type": "array",

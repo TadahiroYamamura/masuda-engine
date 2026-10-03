@@ -19,7 +19,7 @@ func triageEngine(t *testing.T, files map[string]string) (*Engine, *fakeRunner) 
 		t.Fatalf("Check: %+v", p)
 	}
 	r := &fakeRunner{data: map[string][]byte{"/instructions": []byte("x")}, outputs: map[string][]byte{
-		"plan": []byte(`{"summary":"s","steps":[{"number":1,"description":"d","files":["a"]}],"expected_byproducts":[]}`),
+		"plan": []byte(`{"goal":"g","summary":"s","steps":[{"number":1,"title":"t1","description":"d","tests":[],"files":["a"]}],"alternatives":[],"risks":[],"expected_byproducts":[]}`),
 	}}
 	e := New(set, &kvStore{m: map[string][]byte{}}, r, Options{})
 	if err := e.Start(context.Background(), "r", "workflows/x", []string{"instructions"}); err != nil {

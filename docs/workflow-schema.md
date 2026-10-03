@@ -142,7 +142,7 @@ outcomes:
 - 同梱の`findings`は累積データ。旧設計の「指摘の台帳」に当たる
 
 - `schemas/<data>.json`があるデータは、受け取る境界でJSON Schema（draft 2020-12）で検証する
-- 同梱スキーマ: `plan`（summary、steps[]、expected_byproducts[]）、`findings`（累積。要素は`id`、file、line、severity、autofix、message…）、`commit-message`、`selected-perspectives`、`answers`
+- 同梱スキーマ: `plan`（goal、summary、steps[]（number、title、description、tests[]、files[]）、alternatives[]（option、reason）、risks[]、expected_byproducts[]）、`findings`（累積。要素は`id`、file、line、severity、autofix、message…）、`commit-message`、`selected-perspectives`、`answers`
 - スキーマのトップレベルが`string`型なら、出力ファイルの内容そのものを1つの文字列として検証する（JSONとしてパースしない）。`commit-message`がこれに当たる
 - スキーマが無いデータは空でないことだけ確かめる
 - エンジンが用意するデータ: `diff`、`step-diff`、`fix-diff`（unified diff）
