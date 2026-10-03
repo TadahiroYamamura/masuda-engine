@@ -166,7 +166,7 @@ agentノード（`question`の`role`を含む）のタスクが宣言する出�
 - 同梱の`findings`は累積データ。旧設計の「指摘の台帳」に当たる
 
 - `schemas/<data>.json`があるデータは、受け取る境界でJSON Schema（draft 2020-12）で検証する
-- 同梱スキーマ: `plan`（goal、summary、steps[]（number、title、description、tests[]、files[]）、alternatives[]（option、reason）、risks[]、expected_byproducts[]、checks[]（id、category、question、answer、status。計画に立てた問いと答え））、`plan-checklist`（計画への問い。claims[]、sets[]、items[]（id、category、question、reason、hint）、not_covered[]）、`findings`（累積。要素は`id`、file、line、severity、autofix、message、suggestion、withdrawn、disputed（修正者が指摘に反論した）、response（反論の理由）…）、`commit-message`、`selected-perspectives`、`answers`
+- 同梱スキーマ: `plan`（goal、summary、steps[]（number、title、description、tests[]、files[]）、alternatives[]（option、reason）、risks[]、expected_byproducts[]、checks[]（id、category、question、answer、status。計画に立てた問いと答え））、`plan-checklist`（計画への問い。claims[]、sets[]、items[]（id、category、question、reason、hint）、not_covered[]）、`findings`（累積。要素は`id`、file、line、severity、autofix、message、suggestion、withdrawn、disputed（修正者が指摘に反論した）、response（反論の理由）…）、`comment-manifest`（累積。要素は`file`、`line`、`kind`、`note`。実装者が追加・変更したコメントと満たす基準）、`commit-message`、`selected-perspectives`、`answers`
 - スキーマのトップレベルが`string`型なら、出力ファイルの内容そのものを1つの文字列として検証する（JSONとしてパースしない）。`commit-message`がこれに当たる
 - スキーマが無いデータは空でないことだけ確かめる
 

@@ -3,7 +3,7 @@ name: fixer
 description: レビューの指摘をまとめて直し、誤りと判断した指摘には反論する
 tools: Read, Grep, Glob, Edit, Write, Bash, LSP
 inputs: [findings, plan]
-outputs: [findings]
+outputs: [findings, comment-manifest]
 outcomes:
   done: 対象の指摘をすべて、直したか反論して`findings`に書き直した
   nothing_to_fix: 対象の指摘が1件も無かった（何も変更しない）
@@ -34,6 +34,8 @@ outcomes:
 - 対象が1件も無ければ、何も変更せずに`nothing_to_fix`で終える
 
 修正の理由や却下した代替案、指摘の文言をコメントとして書き残さないこと。コードコメントは現在のコードの意図だけを説明するもので、この修正が何にどう応答したかを説明する場所ではない。反論は`response`に書き、コードには書かない。
+
+コメントは、10行以上の要約・選択の理由・コードから読めない背景・トレードオフのいずれかを満たすものだけを書く（テストのヘルパーやテスト内の変数には書かない。周囲のgodocに揃えるものと`//nolint:xxx // 理由`は可）。修正で追加・変更したコメントは、implementerと同じ形（`file`・`line`・`kind`・`note`）で1つずつ`comment-manifest`に列挙し、基準を言えないものは消す。コメントを足していなければ`[]`を書く。
 
 ## 入出力と報告
 

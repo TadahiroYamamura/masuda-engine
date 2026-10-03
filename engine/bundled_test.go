@@ -34,6 +34,20 @@ func checkContinues(t *testing.T, i int, task *AgentTask, lastImpl string) {
 	}
 }
 
+func checkCommentManifest(t *testing.T, i int, task *AgentTask) {
+	t.Helper()
+	switch task.Agent.Name {
+	case "implementer", "fixer":
+		if !slices.Contains(task.Outputs, "comment-manifest") {
+			t.Fatalf("step %d: the %s must write comment-manifest, got %v", i, task.Agent.Name, task.Outputs)
+		}
+	case "reviewer":
+		if _, ok := task.Inputs["comment-manifest"]; !ok {
+			t.Fatalf("step %d: the reviewer must read comment-manifest, got %+v", i, task.Inputs)
+		}
+	}
+}
+
 // TestBundledDevelopReviewsInOneSessionPerRole walks the bundled develop
 // with three steps: the first step's interim review is clean and goes
 // straight to its commit, the second goes through one fix and recheck, the
@@ -73,6 +87,7 @@ func TestBundledDevelopReviewsInOneSessionPerRole(t *testing.T) {
 			"cross-cutting-candidates": []byte(`[]`),
 			"report":                   []byte("# report"),
 			"commit-message":           []byte("feat: x"),
+			"comment-manifest":         []byte(`[]`),
 		}},
 		items: []Item{
 			{Key: "1", Input: "step", Content: []byte(`{"number":1,"title":"t1","description":"a","tests":[],"files":["a.go"]}`)},
@@ -150,6 +165,7 @@ func TestBundledDevelopReviewsInOneSessionPerRole(t *testing.T) {
 			}
 		}
 		checkContinues(t, i, s.Task, lastImpl)
+		checkCommentManifest(t, i, s.Task)
 		if s.Task.Agent.Name == "implementer" {
 			lastImpl = s.Occurrence
 		}
@@ -208,10 +224,11 @@ func TestBundledFixPlansInOneSessionAndPublishes(t *testing.T) {
 	plan := `{"goal":"g","summary":"s","steps":[{"number":1,"title":"t1","description":"a","tests":["x"],"files":["a.go"]}],"alternatives":[],"risks":[],"expected_byproducts":[],"checks":[]}`
 	r := &bundledRunner{e5Runner: e5Runner{
 		fakeRunner: fakeRunner{data: map[string][]byte{"/instructions": []byte("x")}, outputs: map[string][]byte{
-			"investigation":  []byte("i"),
-			"plan":           []byte(plan),
-			"findings":       []byte(`[]`),
-			"commit-message": []byte("fix: x"),
+			"investigation":    []byte("i"),
+			"plan":             []byte(plan),
+			"findings":         []byte(`[]`),
+			"commit-message":   []byte("fix: x"),
+			"comment-manifest": []byte(`[]`),
 		}},
 		items: []Item{
 			{Key: "1", Input: "step", Content: []byte(`{"number":1,"title":"t1","description":"a","tests":["x"],"files":["a.go"]}`)},
@@ -266,6 +283,7 @@ func TestBundledFixPlansInOneSessionAndPublishes(t *testing.T) {
 			}
 		}
 		checkContinues(t, i, s.Task, lastImpl)
+		checkCommentManifest(t, i, s.Task)
 		if s.Task.Agent.Name == "implementer" {
 			lastImpl = s.Occurrence
 		}
@@ -307,11 +325,12 @@ func TestBundledBuildStepDisputeEndsAtInterimGate(t *testing.T) {
 	const disputed = `,"disputed":true,"response":"計画のステップ1でこの形にすると決めている"`
 	r := &bundledRunner{e5Runner: e5Runner{
 		fakeRunner: fakeRunner{data: map[string][]byte{"/instructions": []byte("x")}, outputs: map[string][]byte{
-			"investigation":  []byte("i"),
-			"plan":           []byte(plan),
-			"plan-checklist": []byte(emptyChecklist),
-			"findings":       []byte("[" + finding("f1", "") + "," + finding("f2", "") + "]"),
-			"commit-message": []byte("feat: x"),
+			"investigation":    []byte("i"),
+			"plan":             []byte(plan),
+			"plan-checklist":   []byte(emptyChecklist),
+			"findings":         []byte("[" + finding("f1", "") + "," + finding("f2", "") + "]"),
+			"commit-message":   []byte("feat: x"),
+			"comment-manifest": []byte(`[]`),
 		}},
 		items:   []Item{{Key: "1", Input: "step", Content: []byte(`{"number":1,"title":"t1","description":"a","tests":[],"files":["a.go"]}`)}},
 		changed: []string{"a.go"},
@@ -542,6 +561,37 @@ func TestBundledPlanChecksSchemas(t *testing.T) {
 	for _, c := range cases {
 		if err := e.validateData(c.name, []byte(c.data)); (err == nil) != c.ok {
 			t.Errorf("%s %s: valid=%v want %v (%v)", c.name, c.data, err == nil, c.ok, err)
+		}
+	}
+}
+
+func TestBundledCommentManifestSchema(t *testing.T) {
+	set, err := Load(nil, Bundled())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !set.accumulates("comment-manifest") {
+		t.Fatal("comment-manifest must be accumulated data")
+	}
+	e := New(set, &kvStore{m: map[string][]byte{}}, &fakeRunner{}, Options{})
+	cases := []struct {
+		data string
+		ok   bool
+	}{
+		{`[]`, true},
+		{`[{"file":"a.go","line":3,"kind":"choice","note":"mapではなくsliceにした理由"},{"file":"pkg/b.go","line":10,"kind":"nolint","note":"errcheckを外す理由を同じ行に書いた"}]`, true},
+		{`[{"file":"a.go","line":3,"kind":"history","note":"n"}]`, false},
+		{`[{"file":"a.go","line":3,"kind":"summary","note":""}]`, false},
+		{`[{"file":"a.go","line":3,"kind":"summary","note":"  "}]`, false},
+		{`[{"file":"a.go","line":0,"kind":"summary","note":"n"}]`, false},
+		{`[{"file":"/a.go","line":3,"kind":"summary","note":"n"}]`, false},
+		{`[{"file":"a.go","line":3,"kind":"summary"}]`, false},
+		{`[{"file":"a.go","line":3,"kind":"summary","note":"n","extra":1}]`, false},
+		{`{"file":"a.go","line":3,"kind":"summary","note":"n"}`, false},
+	}
+	for _, c := range cases {
+		if err := e.validateData("comment-manifest", []byte(c.data)); (err == nil) != c.ok {
+			t.Errorf("%s: valid=%v want %v (%v)", c.data, err == nil, c.ok, err)
 		}
 	}
 }

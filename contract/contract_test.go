@@ -925,6 +925,7 @@ func TestCE7_BundledDefinitionsCheckAndDevelopReachesPublish(t *testing.T) {
 	st.outputs["*/investigation"] = []byte("# findings\nnothing special\n")
 	st.outputs["*/plan"] = []byte(validPlan)
 	st.outputs["*/commit-message"] = []byte("feat: flag")
+	st.outputs["*/comment-manifest"] = []byte(`[]`)
 	st.outputs["*/selected-perspectives"] = []byte(`[]`)
 	st.outputs["*/findings"] = []byte(`[]`)
 	st.outputs["*/cross-cutting-candidates"] = []byte(`[]`)
