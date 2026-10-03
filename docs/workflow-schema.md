@@ -100,6 +100,7 @@ nodes:
 - 意味: 「このrunでその役が最後に担当した出現（任意のフレーム。agentノードの出現のうち終了済みで出現IDが最大のもの）のサブエージェントに、このタスクを続けて渡す。該当する出現が無ければ通常どおり新しく起動する」
 - 宛先の出現はノードへの進入時に決まり、`AgentTask.Continues`で渡る（下の「エンジンが用意するもの」）。エンジンが決めるのは宛先の出現だけで、続きが成立するか（VMの再開後でサブエージェントがいない等）はRunner／ゲストの事情。成立しなければゲストは新しく起動する
 - **記憶はあれば使う。無くても成立する入力を常に渡す。** 続きのタスクの入力（`inputs`・feedback・役の本文）は、新しいサブエージェントが単独でこなせる完全なものにする。続けられたサブエージェントには、続きのタスクで役の指示が切り替わる
+- 続きが成立したサブエージェントは起動時の`model`・`effort`のまま動く。続ける側の役の`model`・`effort`は使われない（新しく起動したときだけ使われる）
 
 ### スナップショットと計画外変更の検出の基準点
 
@@ -130,6 +131,8 @@ nodes:
 name: planner
 description: 調査結果から変更方針とステップ分解を計画として書く
 tools: Read, Grep, Glob, Bash
+model: sonnet
+effort: low
 inputs: [investigation]
 outputs: [plan]
 outcomes:
@@ -143,6 +146,7 @@ outcomes:
 - `outcomes`は必須で`done`を含む。`exhausted`・`blocked`・`failed`は宣言できない
 - `tools`は配列かカンマ区切り。省略は全ツール。`Write`か`Edit`を持つ（または省略）エージェントが「書き込める」
 - `outputs`に`diff`・`step-diff`・`fix-diff`は名乗れない（エンジンが用意する）
+- `model`・`effort`は任意。Runner（masudaではゲストのClaude Codeのサブエージェント定義のfrontmatter）にそのまま渡す。省略はその環境の既定（masudaでは`claudeSettings.model`のメインセッションのモデルを継承）。`effort`は`low`・`medium`・`high`・`xhigh`・`max`
 
 ### 出力の受け付け
 
