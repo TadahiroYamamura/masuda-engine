@@ -281,10 +281,13 @@ func TestBundledFixPlansInOneSessionAndPublishes(t *testing.T) {
 	}
 }
 
-// TestBundledBuildStepDisputeEndsAtInterimGate は、fixerが反論し続け、
-// recheckerが指摘を維持し続ける1ステップを歩かせる。3回の修正の後、4回目の
-// 進入がexhaustedになりinterimゲートへ渡る。どの修正もそのステップの
-// implementerに続けて渡され、反論（disputed・response）が指摘の台帳に届く。
+// TestBundledBuildStepDisputeEndsAtInterimGate は、fixerが2件の指摘に反論し、
+// recheckerが1件（f1）の反論を認めて取り下げつつ、もう1件（f2）を維持して
+// unresolvedで返す1ステップを歩かせる。取り下げはunresolvedの報告でも保存され、
+// 次のfixerの台帳からf1が消えている。fixerがf2に反論し続け、recheckerが
+// 維持し続けるので、3回の修正の後、4回目の進入がexhaustedになりinterim
+// ゲートへ渡る。どの修正もそのステップのimplementerに続けて渡され、反論
+// （disputed・response）が指摘の台帳に届く。
 func TestBundledBuildStepDisputeEndsAtInterimGate(t *testing.T) {
 	set, err := Load(nil, Bundled())
 	if err != nil {
@@ -294,13 +297,15 @@ func TestBundledBuildStepDisputeEndsAtInterimGate(t *testing.T) {
 		t.Fatalf("Check develop: %+v", p)
 	}
 	plan := `{"goal":"g","summary":"s","steps":[{"number":1,"title":"t1","description":"a","tests":[],"files":["a.go"]}],"alternatives":[],"risks":[],"expected_byproducts":[]}`
-	finding := `{"id":"f1","file":"a.go","line":3,"severity":"中","autofix":true,"message":"m"}`
-	disputed := `{"id":"f1","file":"a.go","line":3,"severity":"中","autofix":true,"message":"m","disputed":true,"response":"計画のステップ1でこの形にすると決めている"}`
+	finding := func(id, extra string) string {
+		return `{"id":"` + id + `","file":"a.go","line":3,"severity":"中","autofix":true,"message":"m"` + extra + `}`
+	}
+	const disputed = `,"disputed":true,"response":"計画のステップ1でこの形にすると決めている"`
 	r := &bundledRunner{e5Runner: e5Runner{
 		fakeRunner: fakeRunner{data: map[string][]byte{"/instructions": []byte("x")}, outputs: map[string][]byte{
 			"investigation":  []byte("i"),
 			"plan":           []byte(plan),
-			"findings":       []byte("[" + finding + "]"),
+			"findings":       []byte("[" + finding("f1", "") + "," + finding("f2", "") + "]"),
 			"commit-message": []byte("feat: x"),
 		}},
 		items:   []Item{{Key: "1", Input: "step", Content: []byte(`{"number":1,"title":"t1","description":"a","tests":[],"files":["a.go"]}`)}},
@@ -329,6 +334,7 @@ func TestBundledBuildStepDisputeEndsAtInterimGate(t *testing.T) {
 		{"workflows/review/perspectives/review", "clean"},
 	}
 	var lastImpl, fixOcc string
+	fixes, rechecks := 0, 0
 	for i, want := range script {
 		s := mustAdvance(t, e)
 		var at string
@@ -354,7 +360,22 @@ func TestBundledBuildStepDisputeEndsAtInterimGate(t *testing.T) {
 		case "implementer":
 			lastImpl = s.Occurrence
 		case "fixer":
-			r.outputs["findings"] = []byte("[" + disputed + "]")
+			in := string(r.data[s.Task.Inputs["findings"].Occurrence+"/findings"])
+			if !strings.Contains(in, `"f2"`) {
+				t.Fatalf("step %d: the fixer's ledger lost f2: %s", i, in)
+			}
+			if fixes == 0 {
+				if !strings.Contains(in, `"f1"`) {
+					t.Fatalf("step %d: the first fixer's ledger must hold f1: %s", i, in)
+				}
+				r.outputs["findings"] = []byte("[" + finding("f1", disputed) + "," + finding("f2", disputed) + "]")
+			} else {
+				if strings.Contains(in, `"f1"`) {
+					t.Fatalf("step %d: f1 was withdrawn on unresolved, but the fixer's ledger still holds it: %s", i, in)
+				}
+				r.outputs["findings"] = []byte("[" + finding("f2", disputed) + "]")
+			}
+			fixes++
 			fixOcc = s.Occurrence
 		case "rechecker":
 			if in := s.Task.Inputs["findings"]; in.Occurrence != fixOcc {
@@ -364,9 +385,18 @@ func TestBundledBuildStepDisputeEndsAtInterimGate(t *testing.T) {
 			if !strings.Contains(got, `"disputed":true`) || !strings.Contains(got, `"response"`) {
 				t.Fatalf("step %d: the dispute did not reach the ledger: %s", i, got)
 			}
+			if rechecks == 0 {
+				r.outputs["findings"] = []byte("[" + finding("f1", disputed+`,"withdrawn":true`) + "]")
+			} else {
+				r.outputs["findings"] = []byte(`[]`)
+			}
+			rechecks++
 		}
 		if err := e.ReportResult(ctx, "r", s.Occurrence, want.outcome, ""); err != nil {
 			t.Fatalf("step %d (%s): %v", i, want.at, err)
 		}
+	}
+	if fixes != 3 || rechecks != 3 {
+		t.Fatalf("want three fixes and three rechecks, got %d and %d", fixes, rechecks)
 	}
 }
