@@ -17,16 +17,16 @@ func (r *bundledRunner) RunCommand(context.Context, CommandTask) (CommandResult,
 }
 func (r *bundledRunner) Publish(context.Context, PublishRequest) error { r.published++; return nil }
 
-// checkContinues は、fixerが直前に終わったimplementer（developの最終の修正では
-// 最後のステップかreworkのもの）に続けて渡され、同梱の他の役は誰も続けない
+// checkContinues は、fixerとdevelopのreworkが直前に終わったimplementer
+// （最後のステップかreworkのもの）に続けて渡され、同梱の他の役は誰も続けない
 // ことを確かめる。
 func checkContinues(t *testing.T, i int, task *AgentTask, lastImpl string) {
 	t.Helper()
 	want := ""
-	if task.Agent.Name == "fixer" {
+	if task.Agent.Name == "fixer" || task.Workflow == "workflows/develop" && task.Node == "rework" {
 		want = lastImpl
 		if want == "" {
-			t.Fatalf("step %d: a fixer ran before any implementer", i)
+			t.Fatalf("step %d: %s ran before any implementer", i, task.Node)
 		}
 	}
 	if task.Continues != want {
@@ -53,7 +53,9 @@ func checkCommentManifest(t *testing.T, i int, task *AgentTask) {
 // plan-reviserが人間の却下理由をfeedbackで受けて直前の計画を直す。各ステップは
 // implementerからテストを経てそのままコミットする。最終レビューのcleanも
 // checkerを通り、一度差し戻される。fixerのcannot_fixで残りをレポートへ渡す。
-// reworkの後は最終レビューをやり直す。implementerはreworkも含め調査結果を読む。
+// reviewゲートの却下は、最後のステップのimplementerの続きとしてreworkが人間の
+// 却下理由を直し、テストとコミットを経て最終レビューを通さずreviewゲートへ戻る。
+// implementerはreworkも含め調査結果を読む。
 func Test同梱のdevelopは役ごとに1セッションで進み却下を直前の役へ戻す(t *testing.T) {
 	set, err := Load(nil, Bundled())
 	if err != nil {
@@ -123,11 +125,6 @@ func Test同梱のdevelopは役ごとに1セッションで進み却下を直前
 		{"workflows/develop/report", "done"},
 		{"gate:review", "rejected"},
 		{"workflows/develop/rework", "done"},
-		{"workflows/review/perspectives/review", "clean"},
-		{"workflows/review/perspectives/check-review", "clean"},
-		{"workflows/review/cross-cutting/explore", "none_found"},
-		{"workflows/develop/fix", "nothing_to_fix"},
-		{"workflows/develop/report", "done"},
 		{"gate:review", "approved"},
 	}
 	for i, want := range script {
@@ -177,6 +174,10 @@ func Test同梱のdevelopは役ごとに1セッションで進み却下を直前
 			if in := s.Task.Inputs["plan-checklist"]; in.Occurrence != questionsOcc {
 				t.Fatalf("step %d: plan-reviser must read the checklist, got %+v", i, in)
 			}
+		case "rework":
+			if s.Task.Feedback != "人間の却下理由: review" {
+				t.Fatalf("step %d: the rework must receive the human's rejection as feedback, got %q", i, s.Task.Feedback)
+			}
 		}
 		checkContinues(t, i, s.Task, lastImpl)
 		checkCommentManifest(t, i, s.Task)
@@ -194,8 +195,8 @@ func Test同梱のdevelopは役ごとに1セッションで進み却下を直前
 	for _, c := range r.commits {
 		scopes = append(scopes, c.Scope)
 	}
-	if !slices.Equal(scopes, []string{"step", "step", "step", "plan", "plan", "plan"}) {
-		t.Fatalf("want three step commits, the review commit, the rework commit and the second review commit, got %v", scopes)
+	if !slices.Equal(scopes, []string{"step", "step", "step", "plan", "plan"}) {
+		t.Fatalf("want three step commits, the review commit and the rework commit, got %v", scopes)
 	}
 }
 

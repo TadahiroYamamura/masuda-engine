@@ -113,6 +113,7 @@ nodes:
   rework:
     type: agent
     role: agents/implementer
+    continues: agents/implementer
     next:
       done: rework-test
       stuck: end:stuck
@@ -126,7 +127,7 @@ nodes:
     type: commit
     scope: plan
     next:
-      done: review
+      done: approve-review
       rejected: rework
   publish:
     type: publish
