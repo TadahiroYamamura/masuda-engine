@@ -43,13 +43,22 @@ nodes:
       needs_human: ask
       needs_more_investigation: investigate
       exhausted: approve-plan
+  revise-rejected:
+    type: agent
+    role: agents/plan-reviser
+    max: 3
+    next:
+      done: approve-plan
+      needs_human: ask
+      needs_more_investigation: investigate
+      exhausted: approve-plan
   approve-plan:
     type: approval
     gate: plan
     target: plan
     next:
       approved: implement
-      rejected: plan
+      rejected: revise-rejected
   implement:
     type: foreach
     over: steps

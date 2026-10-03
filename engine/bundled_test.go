@@ -48,15 +48,13 @@ func checkCommentManifest(t *testing.T, i int, task *AgentTask) {
 	}
 }
 
-// TestBundledDevelopReviewsInOneSessionPerRole walks the bundled develop
-// with three steps, each going straight from its implementer through the
-// test to its commit. The final review's clean still passes
-// the checker, which sends it back once; the fixer's cannot_fix hands the
-// rest to the report. After a rework, a clean review with nothing to fix
-// skips the recheck. Every implementer, the rework included, reads the
-// investigation.
-// 計画への問いにはplan-reviserが答えきり、そのままplanゲートへ進む。
-func TestBundledDevelopReviewsInOneSessionPerRole(t *testing.T) {
+// Test同梱のdevelopは役ごとに1セッションで進み却下を直前の役へ戻す は、
+// 3ステップのdevelopを歩かせる。planゲートの却下は計画を書き直さず、
+// plan-reviserが人間の却下理由をfeedbackで受けて直前の計画を直す。各ステップは
+// implementerからテストを経てそのままコミットする。最終レビューのcleanも
+// checkerを通り、一度差し戻される。fixerのcannot_fixで残りをレポートへ渡す。
+// reworkの後は最終レビューをやり直す。implementerはreworkも含め調査結果を読む。
+func Test同梱のdevelopは役ごとに1セッションで進み却下を直前の役へ戻す(t *testing.T) {
 	set, err := Load(nil, Bundled())
 	if err != nil {
 		t.Fatal(err)
@@ -102,12 +100,14 @@ func TestBundledDevelopReviewsInOneSessionPerRole(t *testing.T) {
 	}
 
 	type step struct{ at, outcome string }
-	var lastImpl string
+	var lastImpl, questionsOcc, reviseOcc string
 	script := []step{
 		{"workflows/develop/investigate", "done"},
 		{"workflows/develop/plan", "done"},
 		{"workflows/develop/questions", "done"},
 		{"workflows/develop/revise", "done"},
+		{"gate:plan", "rejected"},
+		{"workflows/develop/revise-rejected", "done"},
 		{"gate:plan", "approved"},
 		{"workflows/implement/build-step/implement", "done"},
 		{"workflows/implement/build-step/implement", "done"},
@@ -145,7 +145,11 @@ func TestBundledDevelopReviewsInOneSessionPerRole(t *testing.T) {
 			t.Fatalf("step %d: want %s, got %s", i, want.at, at)
 		}
 		if s.Kind == StatusGate {
-			if err := e.Decide(ctx, "r", s.Occurrence, Decision{Outcome: want.outcome, TargetHash: s.Gate.TargetHash}); err != nil {
+			d := Decision{Outcome: want.outcome, TargetHash: s.Gate.TargetHash}
+			if want.outcome == "rejected" {
+				d.Comment = "人間の却下理由: " + s.Gate.Gate
+			}
+			if err := e.Decide(ctx, "r", s.Occurrence, d); err != nil {
 				t.Fatalf("step %d: %v", i, err)
 			}
 			continue
@@ -153,6 +157,25 @@ func TestBundledDevelopReviewsInOneSessionPerRole(t *testing.T) {
 		if s.Task.Agent.Name == "implementer" {
 			if _, ok := s.Task.Inputs["investigation"]; !ok {
 				t.Fatalf("step %d: the implementer must read the investigation, got %+v", i, s.Task.Inputs)
+			}
+		}
+		switch s.Task.Node {
+		case "questions":
+			questionsOcc = s.Occurrence
+		case "revise":
+			reviseOcc = s.Occurrence
+		case "revise-rejected":
+			if s.Task.Agent.Name != "plan-reviser" {
+				t.Fatalf("step %d: the plan gate's rejection must go to plan-reviser, got %s", i, s.Task.Agent.Name)
+			}
+			if s.Task.Feedback != "人間の却下理由: plan" {
+				t.Fatalf("step %d: plan-reviser must receive the human's rejection as feedback, got %q", i, s.Task.Feedback)
+			}
+			if in := s.Task.Inputs["plan"]; in.Occurrence != reviseOcc {
+				t.Fatalf("step %d: plan-reviser must read the rejected plan, got %+v", i, in)
+			}
+			if in := s.Task.Inputs["plan-checklist"]; in.Occurrence != questionsOcc {
+				t.Fatalf("step %d: plan-reviser must read the checklist, got %+v", i, in)
 			}
 		}
 		checkContinues(t, i, s.Task, lastImpl)
