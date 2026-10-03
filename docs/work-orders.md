@@ -90,6 +90,42 @@
 - 同梱`implement/build-step`の`approve-interim`を`target: step-diff`に変える
 - 契約テスト: C-E1〜C-E7が緑のまま。`contract/`に「`target: step-diff`のゲートが`Diff(step-diff)`で開く」ケースを監督が足す
 
+## E12. engineリポジトリに`.masuda/`を置く（#8）
+
+masudaの開発作業をmasudaのrunで進める体制（masudaのマイルストーンv0.2）の一部。engineの開発作業もmasudaのrun（`workflows/develop`・`workflows/fix`）で進められるように、このリポジトリに`.masuda/`を置く。形は`../masuda/.masuda/`（masuda自身のもの。同時に整えているので、着手時に`git -C ../masuda status -- .masuda`と中身を見る）に倣う。契約（`engine/api.go`・`docs/workflow-schema.md`）は変えない。pushしない。
+
+- `.masuda/settings.json`: `image: "default"`、`egress: []`（Goモジュールはイメージで前取りする）、`secrets: []`、`envFiles: []`、`checks.test`は`go build ./... && go vet ./... && go test ./...`、`claudeSettings: {"model": "opus"}`（既定の役をOpusにする。ユーザー決定）、`images.default.diskMiB`はmasudaと同じ値
+- `.masuda/images/default/Dockerfile`: masudaの`.masuda/images/default/Dockerfile`と同じ構成（ubuntu:24.04、ca-certificates・curl・git・tmux・openssh-server、Go 1.26.8、`ctx/go.mod`・`ctx/go.sum`からの`go mod download all`、gopls、`GOCACHE=/tmp/go-cache`、Claude Codeの版固定`bash -s -- <版>`）。版は`../masuda/internal/guest/guest.go`の`ClaudeCodeVersion`と同じ数字を直書き。`ctx/go.mod`・`ctx/go.sum`はこのリポジトリの`go.mod`・`go.sum`の写し。冒頭のコメントに「`go.mod`を変えたら`ctx/`の写しも更新する」ことを書く
+- `.masuda/pitfalls.jsonl`（形式は`../masuda/docs/user/settings.md`の`pitfalls.jsonl`の節。`id`・`category`・`trigger`・`question`・`background`すべて必須、`category`は`spec`・`security`・`data`・`release`・`regression`・`performance`・`maintainability`・`other`のいずれか）。少なくとも次を書く。`background`は`HANDOFF.md`・`git log`から実際にあったことを引く:
+  - 契約`engine/api.go`・`docs/workflow-schema.md`は変えない（`HANDOFF.md`の「契約への提案」に書いて止まる）
+  - 同梱の定義（`engine/defaults/`）を足したり消したりしたら、同梱の列挙と`bundled_test.go`の歩行テストを更新する
+  - 役の`continues`は「続ける側の`tools`は続けられる側の部分集合」。全役に共通の道具（`Skill`等）を足すときは全部に足す
+  - 累積データ（`x-masuda-accumulate`）の要素は`id`で後勝ち。`withdrawn`の扱いは#7（保存時に捨てられる）
+  - `docs/workflow-schema.md`はmasudaのドキュメントサイトに写される。利用者が読む文として書く
+  - 外部依存は最小限（ネットワーク・git・プロセス起動のライブラリは入れない）
+  - `HANDOFF.md`はセッション終了時に決まった見出しで上書きする
+  - テストケース名は日本語で何を確かめるかを文で書く（既存テストに倣う）
+- `.gitignore`に`.masuda/settings.local.json`と`.masuda/claude.local/`を足す（masudaの`masuda init`が足す行と同じ。`../masuda/cmd/masuda/init.go`の`localIgnores`を見る）。`.env`の行はそのまま
+- **検証**: `go build ./... && go vet ./... && go test -count=1 ./...`が緑。`pitfalls.jsonl`の検査は、masudaのCLIで行う: `cd ../masuda && GOWORK=off go run ./cmd/masuda serve --fake-sandbox --data-dir <一時dir> --socket <一時dir>/m.sock`を立て、`GOWORK=off go run ./cmd/masuda workflow check --repo ../masuda-engine --socket <一時dir>/m.sock`が問題を出さないこと（終わったらそのserveを止める）。Dockerfileは`docker build -t masuda-engine-dev-check:<一意な接尾辞> .masuda/images/default`が通ること（終わったら`docker rmi`でそのタグだけ消す。他のイメージ・コンテナには触らない）
+- 禁止: `$XDG_RUNTIME_DIR/`配下のソケットと`~/.local/share/masuda*`に触れる、`docker rm -f`・`docker system prune`、他プロセスの`kill`、`git push`、`../masuda`の変更
+- 完了の判定: 上の検証が緑で、`.masuda/`がgitに追跡されていること。契約テストC-E1〜C-E9は無修正で緑のまま。終わったら`HANDOFF.md`を上書きし、最終報告は「コミット・検証・指示から外れた点」を10行以内
+
+## E13. 役定義にモデルとeffortを書けるようにする（masuda #69、契約変更）
+
+**契約変更（監督が決定、ユーザー承認済み 2026-10-03）**: `engine/api.go`の`Agent`に`Model string`と`Effort string`を足し、`docs/workflow-schema.md`のエージェント定義に`model`・`effort`を書く。この項目に限り、この2箇所を変えてよい（他の公開名・シグネチャは変えない）。
+
+背景: masudaのrunでは役（サブエージェント）がゲストのClaude Codeの既定のモデルで動き、役ごとにモデルや推論の努力量（effort）を変える手段が無い。Claude Codeのサブエージェント定義はfrontmatterの`model`（`sonnet`・`opus`・`haiku`等の別名、フルのモデルID、`inherit`）と`effort`（`low`・`medium`・`high`・`xhigh`・`max`）を受け付け、どちらも効くことをmasuda側で実測した。ノード単位の上書きは入れない（ゲストは役名でサブエージェントを起動するため）。同じ役を違う設定で使いたい利用者は役定義を複製する。
+
+- `Agent.Model`・`Agent.Effort`: 省略は空文字列（「指定しない」。Runner／ゲストの既定に任せる）。エンジンは値を解釈せず、Runnerへ`AgentTask.Agent`経由でそのまま渡す（`AgentTask`には足さない。`Agent`に入っていれば届く）
+- 読み込み（frontmatter）: `model`は空でない文字列。`effort`は`low`・`medium`・`high`・`xhigh`・`max`のいずれか（Claude Codeが受け付ける値。それ以外は`tools`等の形の誤りと同じ段階で拒否し、メッセージに受け付ける値を列挙する）。`model`の値は検査しない（別名・フルID・`inherit`のどれも通す。Claude Code側の語彙で、engineが追いかけない）
+- `WriteCapable`・`continues`の検査（`tools`の部分集合）は変えない。`continues`で続きが成立したサブエージェントは起動時の設定のまま動くので、続ける側の`model`・`effort`は使われない。このことを`workflow-schema.md`の「続き」に1行足す
+- `docs/workflow-schema.md`「エージェント定義」: 例に`model: sonnet`と`effort: low`を加え、箇条書きに「`model`・`effort`は任意。Runner（masudaではゲストのClaude Codeのサブエージェント定義のfrontmatter）にそのまま渡す。省略はその環境の既定（masudaでは`claudeSettings.model`のメインセッションのモデルを継承）。`effort`は`low`・`medium`・`high`・`xhigh`・`max`」を足す。この文書はmasudaのドキュメントサイトに写されるので、利用者が読む文として書く
+- 同梱の役（`engine/defaults/agents/*.md`）には`model`・`effort`を書かない（既定を継承する）。`bundled_test.go`は変えなくてよい
+- テスト（テストケース名は日本語で、何を確かめるかを文で書く）: `model`・`effort`がfrontmatterから`Agent`に入る、`effort`の不正な値が拒否される（メッセージに値の一覧）、`effort`が無い役は空のまま。判定の分岐をわざと壊してテストが落ちることを確かめる
+- 検証: `go build ./... && go vet ./... && go test -count=1 ./...`が緑。契約テストC-E1〜C-E9は無修正で緑のまま
+- `HANDOFF.md`の「契約への提案」には「E13で`Agent.Model`・`Agent.Effort`を足した（承認済み）。masuda側は`internal/guest.AgentFile`と`docs/guest-protocol.md`で追従する（M14b）」と書く
+- 禁止: `git push`、`../masuda`の変更、新しい依存の追加
+
 ## 契約テストの対応表
 
 | テスト | 項目 |
