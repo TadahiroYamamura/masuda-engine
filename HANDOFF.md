@@ -1,27 +1,20 @@
 # HANDOFF
 ## 作業項目
-E14（engine #10、masuda #68の計測）: 同梱`develop`の途中レビューを外し、ゲートの却下を直前の役へ戻した。契約（`engine/api.go`・`docs/workflow-schema.md`）は変えていない。
+2026-10-07: masuda#99（案a）。`type: privileged`ノードを足した。v0.3.0として公開した（`ce9a878`、タグv0.3.0）。作業はmasudaのセッション（masuda-d3）の監督のもと、サブエージェントが実装した。
 
-- `a77af38` `workflows/implement/build-step`を`implement`→`test`→`commit`に（`workflows/fix/build-step`と同一内容）。`workflows/implement/interim-review`を削除。ゲート名`interim`は予約のまま
-- `e0bd292` `approve-plan.rejected`を新ノード`revise-rejected`（`agents/plan-reviser`、`max: 3`、遷移は`revise-answered`と同じ）へ。`plan-reviser.md`に「## 人間の却下理由」の節を追加
-- `1c281ae` `rework`に`continues: agents/implementer`、`rework-commit.done`を`approve-review`へ（最終レビューの段は通さない）。`review-commit.rejected: rework`も結果として`approve-review`へ戻る
-- テスト（`engine/bundled_test.go`）:
-  - `TestBundledDevelopReviewsInOneSessionPerRole`を`Test同梱のdevelopは役ごとに1セッションで進み却下を直前の役へ戻す`に改名・改修。3ステップがimplement→test→commit、planゲート却下→`revise-rejected`（feedbackに却下理由、直前のreviseの`plan`とquestionsの`plan-checklist`を読む）、reviewゲート却下→`rework`（最後のimplementerの続き、feedbackに却下理由）→`approve-review`。コミットは step×3・plan×2
-  - `TestBundledBuildStepDisputeEndsAtInterimGate`（build-stepのfix/recheckで反論の台帳を確かめていた）を、同じ仕組みが残る最終レビューの`fix`→`recheck`へ移し`Test同梱のdevelopの最終の修正で反論が続くと3回でレポートへ進む`に改名
-  - `checkContinues`はdevelopの`rework`も直前のimplementerに続くことを確かめる。同梱から消えたワークフローの列挙に`workflows/implement/interim-review`を追加
+- 契約: `NodePrivileged`・`Node.PrivilegedName`・`PrivilegedTask`・`Runner.RunPrivileged`（`engine/api.go`）、`docs/workflow-schema.md`の「特権コマンド（privileged）」
+- ノードは`name`（masudaの`privilegedCommands`の名前の形だけを検査）と`max`だけを持つ。終了コード0で`done`、それ以外（時間切れを含む）で`failed`（feedbackにログの末尾）、`max`超えで`exhausted`。SnapshotもSetPolicyも呼ばず、計画外変更の基準点にもしない。承認済み計画の前に置いてよい
+- 未宣言・未承認はRunnerのエラーとして、記録せずにAdvanceがエラーを返す。masudaではこれが`suspended`になり、承認してresumeすると同じ出現をやり直す
+- 同梱の`implementer.md`: 宣言は`/masuda/privileged-commands.json`（masudaが置く）から読む。呼べたが失敗した・確かめられなかったときは`done`を返さない（コードの誤りなら直して再実行し、それでもだめなら`stuck`）
+- 同梱のワークフローは変えていない（developにprivilegedノードを入れるかは未決）
 ## 完了した契約テスト
-C-E1〜C-E9は無修正で緑（`go build ./... && go vet ./... && go test -count=1 ./...`）。
-定義をわざと壊して歩行テストが落ちることを確かめて戻した: `approve-plan.rejected`を`plan`に戻す／`revise-rejected`の役を`planner`にする／`rework-commit.done`を`review`に戻す／`rework`の`continues`を外す／`rework-test.done`を`approve-review`にしてコミットを飛ばす、の5通り。
+- `go build ./... && go vet ./... && go test ./...`が緑（`ce9a878`）。判定を16通り壊して落ちることを確かめた
 ## 未完と理由
-- なし
+- 同梱のdevelopで特権コマンドを強制する方法（宣言があるときだけprivilegedノードを通す等）は決めていない
 ## 次の一手
-- masuda側: engineの版上げと、`docs/user/workflows.md`の同梱ワークフローの説明（途中レビュー・却下の戻り先）を直す
-- 下の「注意点」の残った記述をどうするか監督が決める
+1. 上の未決をmasuda側の利用の様子を見て決める
 ## 注意点
-- 指示書の範囲外として次の記述を残した（途中レビューを前提にした文で、同梱では当たらなくなった）
-  - `engine/defaults/workflows/fix.yaml`冒頭コメント「developとの違い: ステップごとの途中レビューとinterimゲートを置かない」（`fix`は変えない指示のため）。今はdevelopとの違いではなくなった
-  - `agents/reviewer.md`・`review-checker.md`（ノード名が`interim-`で始まるときの途中レビュー）、`rechecker.md`（「ステップの途中レビューの後では」）、`synthesizer.md`（「ステップごとの途中レビュー」）。利用者の定義が`interim-`のノードを使えば今も当たる
-- `docs/workflow-schema.md`の`step-diff`の説明にある「interim gateのように」はゲート名の例なので残した
-- `../masuda`は変更していない。pushしていない
+- Runnerのインターフェースを変えたので、masudaの`internal/runner`とフェイク（contract・engineのテスト）が追従している。Runnerに足すときは同じ範囲に及ぶ
+- privilegedノードはmasudaの`advance()`が`c.mu`を握ったまま同期で呼ぶ。masuda側の実行の関数で`c.mu`を取ると止まる（masudaの契約テストC-M11が検出する）
 ## 契約への提案
 - なし
