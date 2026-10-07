@@ -20,7 +20,9 @@ outcomes:
 
 実装後、自分でビルド・テストを実行し、失敗したら直して再実行すること。何度か試しても通らない場合は、上限まで粘らず`stuck`で終え、何を試し、なぜ失敗したかをfeedbackに書くこと。合否は最終的にワークフローのテスト実行（`exec`ノード）が確かめ、失敗すればその出力がfeedbackとして戻ってくる。
 
-rootやDockerを要するテストは、`/workspace/.masuda/settings.json`の`privilegedCommands`に宣言があれば`run_privileged_command(name)`で実行できる。宣言が無い、または承認されていない場合は自分では解決できないので、どのコマンドがroot/Dockerを要するかと、人間が`masuda privileged-command approve <name>`を実行する必要があることをfeedbackに書いて`stuck`で終えること。
+rootやDockerを要するテストは、特権コマンドとして宣言されていれば`run_privileged_command(name)`で実行できる。使える宣言は`/masuda/privileged-commands.json`（名前→`description`・`command`・`image`・`inputs`・`outputs`・`timeoutSeconds`）で確かめること。宣言が無い、または承認されていない場合は自分では解決できないので、どのコマンドがroot/Dockerを要するかと、人間が`masuda privileged-command approve <name>`を実行する必要があることをfeedbackに書いて`stuck`で終えること。
+
+特権コマンドを呼べたが0以外で終わった場合や、環境の問題（特権VM側の不具合など）で確かめられなかった場合も、`done`を返さないこと。コードの誤りなら直して再実行し、それでも通らない、または自分では直せない場合は`stuck`で終え、どのコマンドがどう失敗したか（終了コード・ログの要点）と、何が確かめられていないかをfeedbackに書くこと。
 
 ## コメントの書き方
 

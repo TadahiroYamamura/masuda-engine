@@ -26,7 +26,8 @@ inputs: [instructions]
 start: a
 nodes:
   a: {type: agent, role: agents/a, inputs: [instructions], outputs: [out], max: 2, egress: [api.example.com, "*.example.org"], secrets: [API_KEY], next: {done: x, redo: a, exhausted: end:gave_up}}
-  x: {type: exec, command: ["/usr/bin/true", "rel/arg"], timeout: 2m, next: {done: q, failed: x}}
+  x: {type: exec, command: ["/usr/bin/true", "rel/arg"], timeout: 2m, next: {done: v, failed: x}}
+  v: {type: privileged, name: db-verify.v2, max: 1, next: {done: q, failed: x, exhausted: end:gave_up}}
   q: {type: question, questions: [{id: scope, text: "ok?", options: [yes, split]}], outputs: [answers], next: {answered: r}}
   r: {type: question, role: agents/a, outputs: [more], next: {answered: g}}
   g: {type: approval, gate: plan, target: plan, next: {approved: f, rejected: a}}
@@ -42,7 +43,7 @@ nodes:
 		t.Fatal(err)
 	}
 	w := set.Workflows["workflows/x"]
-	if strings.Join(w.Order, ",") != "a,x,q,r,g,f,f2,w,c,p" {
+	if strings.Join(w.Order, ",") != "a,x,v,q,r,g,f,f2,w,c,p" {
 		t.Fatalf("order %v", w.Order)
 	}
 	if got := w.Nodes["a"].Next["exhausted"]; !got.End || got.Label != "gave_up" {
@@ -50,6 +51,9 @@ nodes:
 	}
 	if w.Nodes["p"].PublishTarget != "local" || w.Nodes["f"].OnIncomplete != "stop" || w.Nodes["g"].Target != "plan" {
 		t.Fatalf("defaults/targets: %+v %+v %+v", w.Nodes["p"], w.Nodes["f"], w.Nodes["g"])
+	}
+	if v := w.Nodes["v"]; v.PrivilegedName != "db-verify.v2" || v.Max != 1 {
+		t.Fatalf("privileged: %+v", v)
 	}
 	if w.Nodes["x"].Timeout.Minutes() != 2 || w.Nodes["q"].Questions[0].Options[0] != "yes" {
 		t.Fatalf("exec/question: %+v %+v", w.Nodes["x"], w.Nodes["q"])
@@ -81,6 +85,14 @@ func TestLoadRejectionReasons(t *testing.T) {
 		"bad data name":           {node("{type: discard, export: [Plan], next: end}"), "data name"},
 		"egress with port":        {node("{type: exec, command: [/bin/true], egress: [\"api.example.com:443\"], next: end}"), "port"},
 		"bad timeout":             {node("{type: exec, command: [/bin/true], timeout: soon, next: end}"), "timeout"},
+		"特権ノードに宣言の名前が無い":          {node("{type: privileged, next: {done: end, failed: end}}"), `needs "name"`},
+		"特権ノードの名前が宣言の名前の形でない":     {node("{type: privileged, name: \"db verify\", next: {done: end, failed: end}}"), "a name in privilegedCommands"},
+		"特権ノードにtimeoutを書いた":       {node("{type: privileged, name: v, timeout: 5m, next: {done: end, failed: end}}"), `cannot have "timeout"`},
+		"特権ノードにegressを書いた":        {node("{type: privileged, name: v, egress: [a.example.com], next: {done: end, failed: end}}"), `cannot have "egress"`},
+		"特権ノードにsecretsを書いた":       {node("{type: privileged, name: v, secrets: [K], next: {done: end, failed: end}}"), `cannot have "secrets"`},
+		"特権ノードにinputsを書いた":        {node("{type: privileged, name: v, inputs: [plan], next: {done: end, failed: end}}"), `cannot have "inputs"`},
+		"特権ノードにoutputsを書いた":       {node("{type: privileged, name: v, outputs: [report], next: {done: end, failed: end}}"), `cannot have "outputs"`},
+		"特権ノードにcommandを書いた":       {node("{type: privileged, name: v, command: [/bin/true], next: {done: end, failed: end}}"), `cannot have "command"`},
 		"question two outputs":    {node("{type: question, questions: [{id: a, text: b}], outputs: [x, y], next: end}"), "exactly one output"},
 		"question role and fixed": {node("{type: question, role: agents/a, questions: [{id: a, text: b}], outputs: [x], next: end}"), "exactly one of"},
 		"bad over":                {node("{type: foreach, over: everything, body: workflows/y, next: end}"), "over:"},

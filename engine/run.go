@@ -179,6 +179,8 @@ func (m *mover) step(frameID string) (Status, bool, error) {
 		return Status{Kind: StatusAgent, Occurrence: cur.ID, Task: m.e.task(m.run, cur, n)}, false, nil
 	case NodeExec:
 		return m.exec(&fr, cur, n)
+	case NodePrivileged:
+		return m.privileged(cur, n)
 	case NodeQuestion:
 		if n.Role != "" {
 			return Status{Kind: StatusAgent, Occurrence: cur.ID, Task: m.e.task(m.run, cur, n)}, false, nil

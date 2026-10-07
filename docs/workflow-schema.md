@@ -44,6 +44,10 @@ nodes:
     secrets: [LINEAR_API_KEY]
     timeout: 5m
     next: {done: investigate, failed: end:fetch_failed}
+  db-verify:
+    type: privileged
+    name: db-verify                # masudaのsettings.jsonのprivilegedCommandsの名前
+    next: {done: commit, failed: implement}
   ask:
     type: question
     questions:
@@ -56,7 +60,7 @@ nodes:
 
 - ノード名は`[a-z0-9-]+`。`end`は予約
 - `next`はoutcome→行き先。文字列1つは`{done: x}`の省略形。行き先はノード名、`end`、`end:<ラベル>`
-- `max`は進入回数の上限。`agent`と`exec`は省略時3。上限で`exhausted`。`exhausted`に行き先が無ければ実行はblockedで止まる
+- `max`は進入回数の上限。`agent`・`exec`・`privileged`は省略時3。上限で`exhausted`。`exhausted`に行き先が無ければ実行はblockedで止まる
 - `inputs`/`outputs`はデータ名の配列。データ名は`[a-z][a-z0-9-]*`
 
 ### 種類ごとのキー
@@ -65,6 +69,7 @@ nodes:
 |---|---|---|---|
 | `agent` | `role` | `continues`、`max`、`inputs`、`outputs`、`egress`、`secrets` | エージェント定義が宣言したもの + `exhausted` |
 | `exec` | `command`（絶対パスのargv配列） | `inputs`、`outputs`、`max`、`egress`、`secrets`、`timeout`（Go duration） | `done`（exit 0）、`failed`、`exhausted` |
+| `privileged` | `name`（特権コマンドの宣言の名前） | `max` | `done`（exit 0）、`failed`、`exhausted` |
 | `approval` | `gate`、`target`（`plan`/`diff`/`step-diff`/データ名） | — | `approved`、`rejected` |
 | `question` | `role`または`questions`、`outputs`（1つ） | — | `answered` |
 | `foreach` | `over`、`body` | `on_incomplete`、`with`、`max` | `done`、bodyの終わり方（`stop`のとき）、`incomplete`（`continue`のときだけ） |
@@ -87,6 +92,16 @@ nodes:
 - `question.role`を書くと、エージェントがタスクとして質問を組み立て、`ask_human`（ホストが`Engine.Answer`へ仲介する）で人間に聞く。1タスク中に複数回聞いてよく、エンジンは答えをその出現に溜める。エージェントが`done`で報告したとき、溜まった答え（id→answer、後勝ち）を`outputs`の1つめに保存し、ノードは`answered`で遷移する（`done`は`answered`に読み替える）。答えが1つも無いまま`done`なら無効な結果として差し戻す。答えの保存は`done`のときだけで、`done`以外で終えたときは溜まった答えを保存しない（エージェント定義が宣言した出力は下の「出力の受け付け」に従う）。エージェント定義の`outcomes`は`done`のみでよい
 - ゲート名`triage`・`deviation`は予約
 - `agent.continues`は役の参照（`agents/<役>`）。下の「続き」を参照
+- `privileged`は下の「特権コマンド」を参照
+
+### 特権コマンド（privileged）
+
+- 意味: ホスト（masuda）が宣言・承認済みの特権コマンドを`name`で呼び、終了コードで分岐する。エンジンが`Runner.RunPrivileged`で同期的に実行する。エージェントの自己申告ではなく、ワークフローが成否を確かめるために使う
+- `name`はmasudaの`settings.json`の`privilegedCommands`の名前と同じ形（`[A-Za-z0-9][A-Za-z0-9._-]*`）。エンジンは形だけ検査し、宣言の有無・承認・中身（コマンド・イメージ・入出力・通信先・期限）は知らない。宣言と承認の側で決まるので、ノードは`inputs`・`outputs`・`egress`・`secrets`・`timeout`を持たない
+- 終わり方: 終了コード0で時間切れでなければ`done`、それ以外は`failed`（feedbackにログの末尾）、`max`超えで`exhausted`
+- 実行できなかった場合（未宣言・未承認、ホストの失敗）は`Runner.RunPrivileged`のエラーになり、`exec`の基盤の失敗と同じく結果を記録せずに`Advance`がエラーを返す（masudaでは実行がblockedになる）。原因を直した後の`Advance`で同じ出現をもう一度実行する。`exec`と同じく、繰り返して安全な前提で、終わるまで何も記録しない
+- メインの作業ツリーを変えないので、`Runner.Snapshot`を取らず（下の「スナップショット」）、`Runner.SetPolicy`も呼ばない（メインのsandboxは直前の方針のまま）
+- 承認済み計画の前に置いてよい（下の「読み込み時の検査」の「書き込める」ノードに当たらない）
 
 ### 続き（continues）
 
@@ -104,7 +119,7 @@ nodes:
 
 ### スナップショットと計画外変更の検出の基準点
 
-エンジンは`agent`・`exec`の出現が終わるたびに`Runner.Snapshot`を取る。
+エンジンは`agent`・`exec`の出現が終わるたびに`Runner.Snapshot`を取る。`privileged`の出現は作業ツリーを変えないので取らず、計画外変更の検出の基準点にもならない（基準はその前の境界のまま）。
 
 - **書き込めないエージェント**は、進入時と終了時の`ChangedSince(基準)`の結果（ハッシュ）を比べ、違っていれば`deviation`ゲートを開く。基準はフレーム内の直前の境界のスナップショットで、無ければ進入時に取る
 - **`commit`の計画外変更の検出**と、**`target: diff`の承認で添える「publishされない変更」の一覧**は、`ChangedSince("")`（基準はブランチ先頭＝未コミットの変更すべて）で見る。スナップショットを基準にすると、フレーム内の古い境界を拾ってコミット済みのファイルが並んだり、前から残る未コミットのファイルが抜けたりするため

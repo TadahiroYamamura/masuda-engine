@@ -78,7 +78,7 @@ func effectiveMax(n *Node) int {
 	if n.Max > 0 {
 		return n.Max
 	}
-	if n.Type == NodeAgent || n.Type == NodeExec {
+	if n.Type == NodeAgent || n.Type == NodeExec || n.Type == NodePrivileged {
 		return DefaultMax
 	}
 	return 0
@@ -207,7 +207,7 @@ func (s *Set) outcomes(n *Node) map[string]bool {
 			}
 		}
 		return out
-	case NodeExec:
+	case NodeExec, NodePrivileged:
 		return set(OutcomeDone, OutcomeFailed)
 	case NodeApproval:
 		return set(OutcomeApproved, OutcomeRejected)

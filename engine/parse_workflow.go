@@ -13,6 +13,11 @@ import (
 var (
 	egressRe = regexp.MustCompile(`^(\*\.)?[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)*$`)
 	secretRe = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+	// privilegedNameRe is the shape of a name in masuda's settings.json
+	// `privilegedCommands`, checked here like egress so that a typo fails at
+	// load rather than when the node is reached. Whether the name is declared
+	// and approved is the host's to say at run time.
+	privilegedNameRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
 )
 
 // allowedKeys is, per node type, every key besides `type` and `next` that the
@@ -27,6 +32,10 @@ var allowedKeys = map[NodeType]map[string]bool{
 	NodeCommit:   keySet("scope"),
 	NodePublish:  keySet("target", "export"),
 	NodeDiscard:  keySet("export"),
+
+	// The host's declaration fixes what a privileged command reads, writes,
+	// reaches and how long it may take, so the node carries none of them.
+	NodePrivileged: keySet("name", "max"),
 }
 
 var requiredKeys = map[NodeType][]string{
@@ -37,6 +46,8 @@ var requiredKeys = map[NodeType][]string{
 	NodeForeach:  {"over", "body"},
 	NodeWorkflow: {"workflow"},
 	NodeCommit:   {"scope"},
+
+	NodePrivileged: {"name"},
 }
 
 // reservedEndLabels cannot follow `end:`. `done` is spelled as plain `end`;
@@ -214,6 +225,11 @@ func parseNode(ref, id string, v *yaml.Node, le *loadError) *Node {
 				err = fmt.Errorf("must not be empty")
 			} else if err == nil && !path.IsAbs(n.Command[0]) {
 				err = fmt.Errorf("%q must be an absolute path (argv, no shell)", n.Command[0])
+			}
+		case "name":
+			n.PrivilegedName, err = nonEmptyScalar(val)
+			if err == nil && !privilegedNameRe.MatchString(n.PrivilegedName) {
+				err = fmt.Errorf("%q must match %s (a name in privilegedCommands)", n.PrivilegedName, privilegedNameRe)
 			}
 		case "timeout":
 			var s string

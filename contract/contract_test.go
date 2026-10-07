@@ -129,6 +129,10 @@ func (s *stub) RunCommand(_ context.Context, t engine.CommandTask) (engine.Comma
 	s.cmdQ = s.cmdQ[1:]
 	return r, nil
 }
+func (s *stub) RunPrivileged(_ context.Context, t engine.PrivilegedTask) (engine.CommandResult, error) {
+	s.rec("RunPrivileged(%s,%s)", t.Node, t.Name)
+	return engine.CommandResult{}, nil
+}
 func (s *stub) ReadOutput(_ context.Context, _ engine.RunID, occ, name string) ([]byte, bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

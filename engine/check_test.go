@@ -149,6 +149,17 @@ func TestCheckRejectsWithTheIntendedReason(t *testing.T) {
 			"workflows/x.yaml": "version: 1\nstart: plan\nnodes:\n" + fmt.Sprintf(planPrelude, "c") +
 				"  c: {type: commit, scope: step, next: {done: end, rejected: end}}\n",
 		}, `scope: step needs the input "step"`},
+		{"特権ノードのfailedに行き先が無い", map[string]string{
+			"workflows/x.yaml": "version: 1\nstart: v\nnodes:\n  v: {type: privileged, name: db-verify, next: {done: end}}\n",
+		}, `outcome "failed" has no destination`},
+		{"特権ノードが出さないoutcomeに行き先がある", map[string]string{
+			"workflows/x.yaml": "version: 1\nstart: v\nnodes:\n  v: {type: privileged, name: db-verify, next: {done: end, failed: end, rejected: end}}\n",
+		}, `never produces "rejected"`},
+		{"特権ノードを通っても未コミットの変更は残る", map[string]string{
+			"agents/planner.md": roPlanner, "agents/impl.md": rwImpl,
+			"workflows/x.yaml": "version: 1\nstart: plan\nnodes:\n" + fmt.Sprintf(planPrelude, "impl") +
+				"  impl: {type: agent, role: agents/impl, next: v}\n  v: {type: privileged, name: db-verify, next: {done: pub, failed: pub}}\n  pub: {type: publish, next: end}\n",
+		}, "uncommitted changes"},
 		{"export nobody writes", map[string]string{
 			"workflows/x.yaml": "version: 1\nstart: d\nnodes:\n  d: {type: discard, export: [ghost], next: end}\n",
 		}, `export "ghost"`},
@@ -181,6 +192,13 @@ func TestCheckAcceptsRunnableWorkflows(t *testing.T) {
 				"  fetch: {type: exec, command: [\"/usr/bin/python3\", \"/workspace/fetch.py\"], outputs: [task], max: 2, next: {done: ask, failed: fetch, exhausted: end:fetch_failed}}\n" +
 				"  ask: {type: question, questions: [{id: scope, text: \"proceed?\", options: [yes, split]}], outputs: [answers], next: {answered: finish}}\n" +
 				"  finish: {type: discard, export: [task, answers], next: end}\n",
+		},
+		"特権ノードは計画の承認より前に置けてexhaustedの行き先は任意": {
+			"agents/planner.md": roPlanner,
+			"workflows/x.yaml": "version: 1\nstart: v\nnodes:\n" +
+				"  v: {type: privileged, name: db-verify, next: {done: plan, failed: v}}\n" +
+				"  plan: {type: agent, role: agents/planner, outputs: [plan], next: {done: ok, redo: plan}}\n" +
+				"  ok: {type: approval, gate: plan, target: plan, next: {approved: end, rejected: plan}}\n",
 		},
 		"build": {
 			"agents/planner.md":     agentDef("planner", "Read", []string{"plan"}),
@@ -235,7 +253,7 @@ func TestMermaidDrawsEngineInterrupts(t *testing.T) {
 		"agents/planner.md": roPlanner, "agents/impl.md": rwImpl,
 		"workflows/x.yaml": "version: 1\nstart: plan\nnodes:\n" + fmt.Sprintf(planPrelude, "w") +
 			"  w: {type: workflow, workflow: workflows/y, next: end}\n",
-		"workflows/y.yaml": "version: 1\nstart: impl\nnodes:\n  impl: {type: agent, role: agents/impl, next: c}\n  c: {type: commit, scope: plan, next: {done: end, rejected: impl}}\n",
+		"workflows/y.yaml": "version: 1\nstart: impl\nnodes:\n  impl: {type: agent, role: agents/impl, next: v}\n  v: {type: privileged, name: db-verify, next: {done: c, failed: impl}}\n  c: {type: commit, scope: plan, next: {done: end, rejected: impl}}\n",
 	}), Bundled())
 	if err != nil {
 		t.Fatal(err)
@@ -249,6 +267,7 @@ func TestMermaidDrawsEngineInterrupts(t *testing.T) {
 		"w1_c -. \"before commit\" .-> w1_c_deviation",
 		"w0_plan -. \"after run\" .-> w0_plan_deviation", // read-only agent
 		"w0_w -. \"workflow\" .-> w1_impl",
+		"w1_v[\"v<br/>type: privileged<br/>name: db-verify<br/>max: 3\"]",
 		"triage{{",
 	} {
 		if !strings.Contains(mm, want) {

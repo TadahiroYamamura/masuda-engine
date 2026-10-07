@@ -149,6 +149,13 @@ func (f *flow) step(n *Node, st state, violate func(string, ...any)) map[string]
 	case NodeExec:
 		add(OutcomeDone, after)
 		add(OutcomeFailed, after)
+	case NodePrivileged:
+		// The host runs a privileged command apart from the worktree (masuda:
+		// in a VM of its own, on a snapshot), so it cannot write before the
+		// plan is approved nor leave uncommitted changes: the state passes
+		// through unchanged.
+		add(OutcomeDone, st)
+		add(OutcomeFailed, st)
 	case NodeApproval:
 		approved := st
 		if n.Target == dataPlan {

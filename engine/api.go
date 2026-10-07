@@ -40,13 +40,18 @@ const (
 	NodeCommit   NodeType = "commit"
 	NodePublish  NodeType = "publish"
 	NodeDiscard  NodeType = "discard"
+
+	// NodePrivileged runs one of the host's declared privileged commands by
+	// name. The engine knows the name only; what runs, where, and what it may
+	// reach are the host's declaration and approval.
+	NodePrivileged NodeType = "privileged"
 )
 
 // Outcomes the engine reserves. Definitions can neither declare them as agent
 // outcomes nor use them as end labels, except where noted.
 const (
 	OutcomeDone       = "done"
-	OutcomeFailed     = "failed"     // exec: non-zero exit
+	OutcomeFailed     = "failed"     // exec, privileged: non-zero exit or timeout
 	OutcomeExhausted  = "exhausted"  // entry limit reached
 	OutcomeBlocked    = "blocked"    // engine stopped the run
 	OutcomeApproved   = "approved"   // approval
@@ -91,7 +96,7 @@ type Node struct {
 	ID   string
 	Type NodeType
 	Next map[string]Target
-	Max  int // 0 = DefaultMax for agent/exec, unlimited otherwise
+	Max  int // 0 = DefaultMax for agent/exec/privileged, unlimited otherwise
 
 	// agent / question(with role)
 	Role string
@@ -101,6 +106,8 @@ type Node struct {
 	// exec
 	Command []string
 	Timeout time.Duration
+	// privileged: the name of the privileged command's declaration
+	PrivilegedName string
 	// agent / exec: data this node reads beyond the workflow's inputs, and
 	// data it writes.
 	Inputs  []string
@@ -265,7 +272,17 @@ type CommandTask struct {
 	Policy     Policy
 }
 
-// CommandResult is what came back from an exec node.
+// PrivilegedTask is one privileged node run: the host runs the command it
+// declared under Name.
+type PrivilegedTask struct {
+	Run        RunID
+	Occurrence string
+	Node       string
+	Name       string
+}
+
+// CommandResult is what came back from an exec or privileged node. A
+// privileged node declares no outputs, so its Outputs are not read.
 type CommandResult struct {
 	ExitCode int
 	TimedOut bool
@@ -373,6 +390,14 @@ type Runner interface {
 
 	// RunCommand executes an exec node synchronously.
 	RunCommand(ctx context.Context, t CommandTask) (CommandResult, error)
+
+	// RunPrivileged executes a privileged node synchronously. A command that
+	// ran and exited non-zero (or timed out) is a result, not an error; an
+	// error means it could not be run at all, including a name that is not
+	// declared or not approved. The engine calls neither SetPolicy nor
+	// Snapshot for it: the host's declaration decides the policy, and the
+	// command does not change the worktree.
+	RunPrivileged(ctx context.Context, t PrivilegedTask) (CommandResult, error)
 
 	// ReadOutput returns the content an agent occurrence wrote for name, or
 	// ok=false if it wrote nothing.
@@ -509,9 +534,9 @@ func (e *Engine) Start(ctx context.Context, run RunID, root string, inputs []str
 }
 
 // Advance moves the run as far as it can without a human or an agent, runs
-// exec/commit/publish/discard nodes on the way, and returns what it is now
-// waiting for. Idempotent: calling it again without new information returns
-// the same Status.
+// exec/privileged/commit/publish/discard nodes on the way, and returns what it
+// is now waiting for. Idempotent: calling it again without new information
+// returns the same Status.
 func (e *Engine) Advance(ctx context.Context, run RunID) (Status, error) {
 	return e.walk(ctx, run, true)
 }

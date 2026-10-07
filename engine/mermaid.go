@@ -94,6 +94,8 @@ func (s *Set) shape(n *Node) string {
 		label += "<br/>" + n.Role
 	case NodeExec:
 		label += "<br/>" + strings.Join(n.Command, " ")
+	case NodePrivileged:
+		label += "<br/>name: " + n.PrivilegedName
 	case NodeApproval:
 		label += fmt.Sprintf("<br/>gate: %s, target: %s", n.Gate, n.Target)
 		return "{" + quote(label) + "}"
