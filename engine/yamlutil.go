@@ -64,6 +64,17 @@ func scalarList(n *yaml.Node) ([]string, error) {
 	return out, nil
 }
 
+func boolValue(n *yaml.Node) (bool, error) {
+	var v bool
+	if n.Kind != yaml.ScalarNode || n.Tag != "!!bool" {
+		return false, fmt.Errorf("must be true or false (line %d)", n.Line)
+	}
+	if err := n.Decode(&v); err != nil {
+		return false, err
+	}
+	return v, nil
+}
+
 func intValue(n *yaml.Node) (int, error) {
 	var v int
 	if n.Kind != yaml.ScalarNode || n.Tag != "!!int" {

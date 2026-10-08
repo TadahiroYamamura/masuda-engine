@@ -100,6 +100,7 @@ func TestLoadRejectionReasons(t *testing.T) {
 		"unknown type":            {node("{type: investigate, next: end}"), "unknown type"},
 		"role not a ref":          {node("{type: agent, role: planner, next: end}"), "reference"},
 		"version 2":               {map[string]string{"workflows/x.yaml": "version: 2\nstart: a\nnodes:\n  a: {type: discard, next: end}\n"}, "not supported"},
+		"user_invocableが真偽値でない":   {map[string]string{"workflows/x.yaml": "version: 1\nuser_invocable: \"no\"\nstart: a\nnodes:\n  a: {type: discard, next: end}\n"}, "must be true or false"},
 		"name mismatch":           {map[string]string{"agents/b.md": strings.Replace(testAgent, "name: a", "name: c", 1)}, "must equal"},
 		"wrong extension":         {map[string]string{"workflows/x.yml": "x"}, "only .yaml"},
 		"bad schema":              {map[string]string{"schemas/x.json": `{"type": 3}`}, "schema"},
@@ -112,6 +113,25 @@ func TestLoadRejectionReasons(t *testing.T) {
 				t.Fatalf("err = %v, want it to mention %q", err, c.want)
 			}
 		})
+	}
+}
+
+func TestUserInvocableは省略時trueで書いた値を写す(t *testing.T) {
+	wf := func(line string) string {
+		return "version: 1\n" + line + "start: a\nnodes:\n  a: {type: discard, next: end}\n"
+	}
+	set, err := Load(mapFS(map[string]string{
+		"workflows/omitted.yaml": wf(""),
+		"workflows/yes.yaml":     wf("user_invocable: true\n"),
+		"workflows/no.yaml":      wf("user_invocable: false\n"),
+	}), Bundled())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for ref, want := range map[string]bool{"workflows/omitted": true, "workflows/yes": true, "workflows/no": false} {
+		if got := set.Workflows[ref].UserInvocable; got != want {
+			t.Errorf("%s: UserInvocable = %v, want %v", ref, got, want)
+		}
 	}
 }
 

@@ -79,7 +79,7 @@ func parseWorkflow(ref string, data []byte, le *loadError) *Workflow {
 		le.add(ref, "", "workflow %v", err)
 		return nil
 	}
-	wf := &Workflow{Path: ref, Nodes: map[string]*Node{}}
+	wf := &Workflow{Path: ref, Nodes: map[string]*Node{}, UserInvocable: true}
 	before := len(le.problems)
 	var nodesNode *yaml.Node
 	seen := map[string]bool{}
@@ -106,6 +106,11 @@ func parseWorkflow(ref string, data []byte, le *loadError) *Workflow {
 			}
 		case "nodes":
 			nodesNode = p.val
+		case "user_invocable":
+			wf.UserInvocable, err = boolValue(p.val)
+			if err != nil {
+				le.add(ref, "", "user_invocable %v", err)
+			}
 		default:
 			le.add(ref, "", "unknown key %q", p.key)
 		}

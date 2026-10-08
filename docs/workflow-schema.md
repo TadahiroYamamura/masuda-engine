@@ -13,6 +13,7 @@
 ```yaml
 version: 1
 inputs: [instructions]          # 受け取るデータ名（省略可）
+user_invocable: true            # 利用者が直接始めるワークフローか（省略時true。下記）
 start: investigate
 nodes:
   investigate:
@@ -59,6 +60,7 @@ nodes:
 ### 共通
 
 - ノード名は`[a-z0-9-]+`。`end`は予約
+- `user_invocable`は、利用者が直接始めるワークフローかどうか。他のワークフローから呼ばれる部品や動作確認用のものには`false`を書く。ホスト（masudaの`workflow list`）は一覧から外すだけで、始めることも検査することも今までどおりできる。エンジンは値を`Workflow.UserInvocable`に写すだけで、実行・検査には使わない
 - `next`はoutcome→行き先。文字列1つは`{done: x}`の省略形。行き先はノード名、`end`、`end:<ラベル>`
 - `max`は進入回数の上限。`agent`・`exec`・`privileged`は省略時3。上限で`exhausted`。`exhausted`に行き先が無ければ実行はblockedで止まる
 - `inputs`/`outputs`はデータ名の配列。データ名は`[a-z][a-z0-9-]*`

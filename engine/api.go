@@ -143,6 +143,10 @@ type Workflow struct {
 	Start   string
 	Nodes   map[string]*Node
 	Order   []string // file order, for stable diagnostics
+	// UserInvocable is false for a workflow meant to be called by other
+	// workflows (or kept for checks), not started by a user. Hosts leave such
+	// workflows out of their lists; starting one is still allowed.
+	UserInvocable bool
 }
 
 // Agent is one parsed agent definition.

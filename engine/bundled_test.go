@@ -610,3 +610,35 @@ func TestBundledCommentManifestSchema(t *testing.T) {
 		}
 	}
 }
+
+// 同梱のワークフローのうち、利用者が直接始めるのはdevelop・fix・reviewだけ。部品と動作確認用の
+// smokeは一覧から外す。同梱を足したらこの表にも足す（表に無いものは失敗にする）。
+func TestBundledのuser_invocableは利用者が始めるものだけtrue(t *testing.T) {
+	want := map[string]bool{
+		"workflows/develop":              true,
+		"workflows/fix":                  true,
+		"workflows/review":               true,
+		"workflows/fix/build-step":       false,
+		"workflows/implement/build-step": false,
+		"workflows/review/cross-cutting": false,
+		"workflows/review/perspectives":  false,
+		"workflows/smoke":                false,
+	}
+	set, err := Load(mapFS(nil), Bundled())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for ref, w := range set.Workflows {
+		v, ok := want[ref]
+		if !ok {
+			t.Errorf("%s is not in the table", ref)
+			continue
+		}
+		if w.UserInvocable != v {
+			t.Errorf("%s: UserInvocable = %v, want %v", ref, w.UserInvocable, v)
+		}
+	}
+	if len(set.Workflows) != len(want) {
+		t.Errorf("bundled workflows = %d, table = %d", len(set.Workflows), len(want))
+	}
+}
