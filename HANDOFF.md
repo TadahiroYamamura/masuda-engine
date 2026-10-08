@@ -1,20 +1,27 @@
 # HANDOFF
 ## 作業項目
-2026-10-07: masuda#99（案a）。`type: privileged`ノードを足した。v0.3.0として公開した（`ce9a878`、タグv0.3.0）。作業はmasudaのセッション（masuda-d3）の監督のもと、サブエージェントが実装した。
+2026-10-08: masuda#93。ワークフローのトップに`user_invocable`（省略時true）を書けるようにした（`6fff69f`、`main`にpush済み、未タグ）。masudaのセッション（masuda-d3）がユーザーの判断で契約を変えて実装した。
 
-- 契約: `NodePrivileged`・`Node.PrivilegedName`・`PrivilegedTask`・`Runner.RunPrivileged`（`engine/api.go`）、`docs/workflow-schema.md`の「特権コマンド（privileged）」
-- ノードは`name`（masudaの`privilegedCommands`の名前の形だけを検査）と`max`だけを持つ。終了コード0で`done`、それ以外（時間切れを含む）で`failed`（feedbackにログの末尾）、`max`超えで`exhausted`。SnapshotもSetPolicyも呼ばず、計画外変更の基準点にもしない。承認済み計画の前に置いてよい
-- 未宣言・未承認はRunnerのエラーとして、記録せずにAdvanceがエラーを返す。masudaではこれが`suspended`になり、承認してresumeすると同じ出現をやり直す
-- 同梱の`implementer.md`: 宣言は`/masuda/privileged-commands.json`（masudaが置く）から読む。呼べたが失敗した・確かめられなかったときは`done`を返さない（コードの誤りなら直して再実行し、それでもだめなら`stuck`）
-- 同梱のワークフローは変えていない（developにprivilegedノードを入れるかは未決）
+- 契約: `Workflow.UserInvocable`（`engine/api.go`）、`docs/workflow-schema.md`のワークフローファイルの例と`user_invocable`の説明
+- 読み込みは真偽値だけを受け付ける（`boolValue`、`engine/yamlutil.go`）。エンジンは値を写すだけで、実行・検査には使わない。falseのワークフローも始められ、検査もされる
+- 同梱: `fix/build-step`・`implement/build-step`・`review/cross-cutting`・`review/perspectives`・`smoke`にfalse。`develop`・`fix`・`review`は省略（true）
+- masuda側: `WorkflowEntry.user_invocable`を足し、`masuda workflow list`は既定でtrueだけ、`--all`で全部を出す。masudaのgo.modは`main`の擬似バージョン（`v0.3.1-0.20261008061235-6fff69f1e60b`）
+
+前回（2026-10-07）のmasuda#99（`type: privileged`ノード、v0.3.0）の要点は注意点に残した。
 ## 完了した契約テスト
-- `go build ./... && go vet ./... && go test ./...`が緑（`ce9a878`）。判定を16通り壊して落ちることを確かめた
+- `go build ./... && go vet ./... && go test ./...`が緑（`6fff69f`）
+- 足したテスト: `TestUserInvocableは省略時trueで書いた値を写す`（load_test.go）、`TestBundledのuser_invocableは利用者が始めるものだけtrue`（bundled_test.go。同梱を足したら表にも足さないと落ちる）、`TestLoadRejectionReasons`の「user_invocableが真偽値でない」。既定値を変える・smokeのfalseを消すと落ちることを確かめた
 ## 未完と理由
+- v0.4.0のタグ: masudaが契約を変えたので次はv0.4.0。masudaのリリース（Skill `release`）のときに、engineにも同じタグを打つ
 - 同梱のdevelopで特権コマンドを強制する方法（宣言があるときだけprivilegedノードを通す等）は決めていない
 ## 次の一手
-1. 上の未決をmasuda側の利用の様子を見て決める
+1. masudaのv0.4.0のリリースで、engineの`main`の先頭にv0.4.0を打つ（masudaのgo.modをタグに上げる）
+2. privilegedノードの強制の方法を、masuda側の利用の様子を見て決める
 ## 注意点
-- Runnerのインターフェースを変えたので、masudaの`internal/runner`とフェイク（contract・engineのテスト）が追従している。Runnerに足すときは同じ範囲に及ぶ
+- ワークフローのトップのキーを足すときは、`parseWorkflow`の`switch`（知らないキーは拒む）と`workflow-schema.md`の両方を直す
+- 同梱のワークフローを足したら、`TestBundledのuser_invocableは利用者が始めるものだけtrue`の表に足す
+- Runnerのインターフェースを変えると、masudaの`internal/runner`とフェイク（contract・engineのテスト）が追従する必要がある
 - privilegedノードはmasudaの`advance()`が`c.mu`を握ったまま同期で呼ぶ。masuda側の実行の関数で`c.mu`を取ると止まる（masudaの契約テストC-M11が検出する）
+- ワークフローの形への外部の指摘（ワークフローのoutputs・outcomesの宣言、revise系3ノードの統合、optionalなinput）は、masuda側で検討した上でユーザーが却下した
 ## 契約への提案
 - なし
