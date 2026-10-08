@@ -18,15 +18,21 @@ func (r *bundledRunner) RunCommand(context.Context, CommandTask) (CommandResult,
 func (r *bundledRunner) Publish(context.Context, PublishRequest) error { r.published++; return nil }
 
 // checkContinues は、fixerとdevelopのreworkが直前に終わったimplementer
-// （最後のステップかreworkのもの）に続けて渡され、同梱の他の役は誰も続けない
-// ことを確かめる。
-func checkContinues(t *testing.T, i int, task *AgentTask, lastImpl string) {
+// （最後のステップかreworkのもの）に、fixのreplanが直前に終わったquick-planner
+// に続けて渡され、同梱の他の役は誰も続けないことを確かめる。
+func checkContinues(t *testing.T, i int, task *AgentTask, lastImpl, lastPlanner string) {
 	t.Helper()
 	want := ""
 	if task.Agent.Name == "fixer" || task.Workflow == "workflows/develop" && task.Node == "rework" {
 		want = lastImpl
 		if want == "" {
 			t.Fatalf("step %d: %s ran before any implementer", i, task.Node)
+		}
+	}
+	if task.Workflow == "workflows/fix" && task.Node == "replan" {
+		want = lastPlanner
+		if want == "" {
+			t.Fatalf("step %d: %s ran before any quick-planner", i, task.Node)
 		}
 	}
 	if task.Continues != want {
@@ -179,7 +185,7 @@ func Test同梱のdevelopは役ごとに1セッションで進み却下を直前
 				t.Fatalf("step %d: the rework must receive the human's rejection as feedback, got %q", i, s.Task.Feedback)
 			}
 		}
-		checkContinues(t, i, s.Task, lastImpl)
+		checkContinues(t, i, s.Task, lastImpl, "")
 		checkCommentManifest(t, i, s.Task)
 		if s.Task.Agent.Name == "implementer" {
 			lastImpl = s.Occurrence
@@ -200,11 +206,12 @@ func Test同梱のdevelopは役ごとに1セッションで進み却下を直前
 	}
 }
 
-// TestBundledFixPlansInOneSessionAndPublishes walks the bundled fix with one
-// step: the first final review goes through the fixer and the rechecker, the
-// review gate sends it back to a rework, and the second review is clean and
-// goes straight to the review commit.
-func TestBundledFixPlansInOneSessionAndPublishes(t *testing.T) {
+// Test同梱のfixは計画の却下を前回の計画の続きで直しpublishする は、1ステップの
+// fixを歩かせる。planゲートの却下は計画を一から書き直さず、replanが直前の
+// quick-plannerの続きとして、人間の却下理由をfeedbackで、前回の計画と調査結果を
+// 入力で受けて直す。最初の最終レビューはfixerとrecheckerを通り、reviewゲートの
+// 却下でreworkへ戻り、2回目のレビューはcleanでそのままreview-commitへ進む。
+func Test同梱のfixは計画の却下を前回の計画の続きで直しpublishする(t *testing.T) {
 	set, err := Load(nil, Bundled())
 	if err != nil {
 		t.Fatal(err)
@@ -252,9 +259,11 @@ func TestBundledFixPlansInOneSessionAndPublishes(t *testing.T) {
 	}
 
 	type step struct{ at, outcome string }
-	var lastImpl string
+	var lastImpl, lastPlanner string
 	script := []step{
 		{"workflows/fix/plan", "done"},
+		{"gate:plan", "rejected"},
+		{"workflows/fix/replan", "done"},
 		{"gate:plan", "approved"},
 		{"workflows/fix/build-step/implement", "done"},
 		{"workflows/review/perspectives/review", "done"},
@@ -282,7 +291,11 @@ func TestBundledFixPlansInOneSessionAndPublishes(t *testing.T) {
 			t.Fatalf("step %d: want %s, got %s", i, want.at, at)
 		}
 		if s.Kind == StatusGate {
-			if err := e.Decide(ctx, "r", s.Occurrence, Decision{Outcome: want.outcome, TargetHash: s.Gate.TargetHash}); err != nil {
+			d := Decision{Outcome: want.outcome, TargetHash: s.Gate.TargetHash}
+			if want.outcome == "rejected" {
+				d.Comment = "人間の却下理由: " + s.Gate.Gate
+			}
+			if err := e.Decide(ctx, "r", s.Occurrence, d); err != nil {
 				t.Fatalf("step %d: %v", i, err)
 			}
 			continue
@@ -292,10 +305,26 @@ func TestBundledFixPlansInOneSessionAndPublishes(t *testing.T) {
 				t.Fatalf("step %d: the implementer must read the investigation, got %+v", i, s.Task.Inputs)
 			}
 		}
-		checkContinues(t, i, s.Task, lastImpl)
+		if s.Task.Node == "replan" {
+			if s.Task.Agent.Name != "quick-planner" {
+				t.Fatalf("step %d: the plan gate's rejection must go to quick-planner, got %s", i, s.Task.Agent.Name)
+			}
+			if s.Task.Feedback != "人間の却下理由: plan" {
+				t.Fatalf("step %d: replan must receive the human's rejection as feedback, got %q", i, s.Task.Feedback)
+			}
+			for _, name := range []string{"plan", "investigation"} {
+				if in := s.Task.Inputs[name]; in.Occurrence != lastPlanner {
+					t.Fatalf("step %d: replan must read the rejected %s, got %+v", i, name, in)
+				}
+			}
+		}
+		checkContinues(t, i, s.Task, lastImpl, lastPlanner)
 		checkCommentManifest(t, i, s.Task)
-		if s.Task.Agent.Name == "implementer" {
+		switch s.Task.Agent.Name {
+		case "implementer":
 			lastImpl = s.Occurrence
+		case "quick-planner":
+			lastPlanner = s.Occurrence
 		}
 		if err := e.ReportResult(ctx, "r", s.Occurrence, want.outcome, ""); err != nil {
 			t.Fatalf("step %d (%s): %v", i, want.at, err)
@@ -393,7 +422,7 @@ func Test同梱のdevelopの最終の修正で反論が続くと3回でレポー
 			}
 			continue
 		}
-		checkContinues(t, i, s.Task, lastImpl)
+		checkContinues(t, i, s.Task, lastImpl, "")
 		switch s.Task.Agent.Name {
 		case "implementer":
 			lastImpl = s.Occurrence

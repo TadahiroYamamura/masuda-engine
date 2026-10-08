@@ -16,13 +16,24 @@ nodes:
       done: approve-plan
       out_of_scope: end:out_of_scope
       needs_human: end:needs_human
+  replan:
+    type: agent
+    role: agents/quick-planner
+    continues: agents/quick-planner
+    inputs: [plan, investigation]
+    max: 3
+    next:
+      done: approve-plan
+      out_of_scope: end:out_of_scope
+      needs_human: end:needs_human
+      exhausted: approve-plan
   approve-plan:
     type: approval
     gate: plan
     target: plan
     next:
       approved: implement
-      rejected: plan
+      rejected: replan
   implement:
     type: foreach
     over: steps
