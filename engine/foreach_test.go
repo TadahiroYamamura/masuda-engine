@@ -44,6 +44,11 @@ const e5Plan = `{"goal":"g","summary":"s","steps":[{"number":1,"title":"t1","des
 
 func e5Engine(t *testing.T, onIncomplete string) (*Engine, *e5Runner) {
 	t.Helper()
+	return e5EngineWithPlan(t, onIncomplete, e5Plan)
+}
+
+func e5EngineWithPlan(t *testing.T, onIncomplete, plan string) (*Engine, *e5Runner) {
+	t.Helper()
 	next := "{done: end, gave_up: end:gave_up}"
 	if onIncomplete == "continue" {
 		next = "{done: end, incomplete: end:partial}"
@@ -65,7 +70,7 @@ func e5Engine(t *testing.T, onIncomplete string) (*Engine, *e5Runner) {
 	if p := set.Check("workflows/x"); len(p) != 0 {
 		t.Fatalf("Check: %+v", p)
 	}
-	r := &e5Runner{fakeRunner: fakeRunner{data: map[string][]byte{"/instructions": []byte("x")}, outputs: map[string][]byte{"plan": []byte(e5Plan)}}}
+	r := &e5Runner{fakeRunner: fakeRunner{data: map[string][]byte{"/instructions": []byte("x")}, outputs: map[string][]byte{"plan": []byte(plan)}}}
 	r.items = []Item{
 		{Key: "1", Input: "step", Content: []byte(`{"number":1,"title":"t1","description":"a","tests":[],"files":["a.go"]}`), Done: true},
 		{Key: "2", Input: "step", Content: []byte(`{"number":2,"title":"t2","description":"b","tests":[],"files":["b.go"]}`)},

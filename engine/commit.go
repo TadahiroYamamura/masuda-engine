@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+
+	"github.com/bmatcuk/doublestar/v4"
 )
 
 const dataCommitMessage = "commit-message"
@@ -175,7 +177,7 @@ func (m *mover) commit(fr *frame, cur *occurrence, n *Node) (Status, bool, error
 		}
 		var outside []string
 		for _, f := range files {
-			if !slices.Contains(req.Allowed, f) && !slices.Contains(req.Byproducts, f) {
+			if !slices.Contains(req.Allowed, f) && !matchesByproduct(f, req.Byproducts) {
 				outside = append(outside, f)
 			}
 		}
@@ -342,4 +344,22 @@ func (m *mover) approvedCommit() (occ, commit string) {
 		}
 	}
 	return "", ""
+}
+
+// matchesByproduct reports whether path is one of byproducts: an exact path,
+// or a glob in doublestar syntax ("*" stays within one directory, "**" spans
+// zero or more), which is what planners are told to write in
+// expected_byproducts. The host matches CommitRequest.Byproducts the same
+// way; if the two differ, a file one side lets through is a deviation to the
+// other.
+func matchesByproduct(path string, byproducts []string) bool {
+	for _, p := range byproducts {
+		if p == path {
+			return true
+		}
+		if ok, err := doublestar.Match(p, path); err == nil && ok {
+			return true
+		}
+	}
+	return false
 }

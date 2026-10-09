@@ -351,7 +351,10 @@ type CommitRequest struct {
 	Scope      string   // "step" | "plan"
 	Step       string   // step key when Scope is "step"
 	Allowed    []string // paths the commit may include (plan files + approved deviations)
-	Byproducts []string // paths neither committed nor counted as deviations
+	// Byproducts are paths neither committed nor counted as deviations: exact
+	// paths or doublestar globs ("*" stays within one directory, "**" spans
+	// zero or more). Hosts must match them the same way.
+	Byproducts []string
 	Message    string
 }
 

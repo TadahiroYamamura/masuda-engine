@@ -230,6 +230,58 @@ func TestDeviationApprovalWithoutFilesAddsNothing(t *testing.T) {
 	}
 }
 
+// 計画のexpected_byproductsはplannerに約束したglob（*は/をまたがず、**は0階層以上をまたぐ）として
+// 照合する。完全一致で照合していたため、**/__pycache__/** のような副産物が計画外の変更になっていた（#3）。
+func TestCommitはexpected_byproductsのglobに当たる変更を計画外の変更にしない(t *testing.T) {
+	plan := strings.Replace(e5Plan, `"expected_byproducts":[]`, `"expected_byproducts":["**/__pycache__/**","*.log"]`, 1)
+	e, r := e5EngineWithPlan(t, "continue", plan)
+	ctx := context.Background()
+	s, _ := e.Advance(ctx, "r")
+	r.changed = []string{"b.go", "__pycache__/top.pyc", "pkg/__pycache__/m.cpython-312.pyc", "debug.log"}
+	_ = e.ReportResult(ctx, "r", s.Occurrence, "done", "")
+	s, _ = e.Advance(ctx, "r")
+	if s.Kind == StatusGate {
+		t.Fatalf("byproducts matching the globs must not open a gate: %+v", s.Gate)
+	}
+	if len(r.commits) != 1 || !slices.Equal(r.commits[0].Byproducts, []string{"**/__pycache__/**", "*.log"}) {
+		t.Fatalf("the plan's patterns go to the host as they are: %+v", r.commits)
+	}
+	r.changed = []string{"c.go", "logs/debug.log"}
+	_ = e.ReportResult(ctx, "r", s.Occurrence, "done", "")
+	s, _ = e.Advance(ctx, "r")
+	if s.Kind != StatusGate || s.Gate.Gate != GateDeviation || string(s.Gate.Subject) != "logs/debug.log" {
+		t.Fatalf("*.log does not reach into a directory; want a deviation gate on logs/debug.log, got %+v", s)
+	}
+}
+
+func TestMatchesByproductは完全一致とdoublestarのglobで照合する(t *testing.T) {
+	cases := []struct {
+		pattern, path string
+		want          bool
+	}{
+		{"go.sum", "go.sum", true},
+		{"go.sum", "sub/go.sum", false},
+		{"**/__pycache__/**", "__pycache__/a.pyc", true},
+		{"**/__pycache__/**", "pkg/__pycache__/a.pyc", true},
+		{"**/__pycache__/**", "a/b/__pycache__/c/d.pyc", true},
+		{"**/__pycache__/**", "pkg/__pycache__x/a.pyc", false},
+		{"*.log", "debug.log", true},
+		{"*.log", "logs/debug.log", false},
+		{"**/*.pyc", "a.pyc", true},
+		{"**/*.pyc", "a/b/c.pyc", true},
+		{"build/*", "build/x", true},
+		{"build/*", "build/x/y", false},
+		{"build/**", "build/x/y", true},
+		{"[", "[", true},
+		{"[", "a", false},
+	}
+	for _, c := range cases {
+		if got := matchesByproduct(c.path, []string{c.pattern}); got != c.want {
+			t.Errorf("matchesByproduct(%q, [%q]) = %v, want %v", c.path, c.pattern, got, c.want)
+		}
+	}
+}
+
 func TestLoadOverForms(t *testing.T) {
 	for over, ok := range map[string]bool{
 		"steps": true, "perspectives": true, "perspectives(from=pick)": true, "findings": true,
