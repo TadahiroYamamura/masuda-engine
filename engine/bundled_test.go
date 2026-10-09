@@ -204,6 +204,10 @@ func Test同梱のdevelopは役ごとに1セッションで進み却下を直前
 	if !slices.Equal(scopes, []string{"step", "step", "step", "plan", "plan"}) {
 		t.Fatalf("want three step commits, the review commit and the rework commit, got %v", scopes)
 	}
+	// レビューの後の修正コミットはfixerが書いたメッセージで、計画のsummaryではない（#9）。
+	if m := r.commits[3].Message; m != "feat: x" {
+		t.Fatalf("the review commit must use the fixer's commit-message, got %q", m)
+	}
 }
 
 // Test同梱のfixは計画の却下を前回の計画の続きで直しpublishする は、1ステップの
@@ -339,6 +343,10 @@ func Test同梱のfixは計画の却下を前回の計画の続きで直しpubli
 	}
 	if !slices.Equal(scopes, []string{"step", "plan", "plan", "plan"}) {
 		t.Fatalf("want the step commit, the review commit, the rework commit and the second review commit, got %v", scopes)
+	}
+	// レビューの後の修正コミットはfixerが書いたメッセージで、計画のsummaryではない（#9）。
+	if m := r.commits[1].Message; m != "fix: x" {
+		t.Fatalf("the review commit must use the fixer's commit-message, got %q", m)
 	}
 }
 

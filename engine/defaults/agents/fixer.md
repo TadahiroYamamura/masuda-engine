@@ -3,7 +3,7 @@ name: fixer
 description: レビューの指摘をまとめて直し、誤りと判断した指摘には反論する
 tools: Read, Grep, Glob, Edit, Write, Bash, LSP, Skill
 inputs: [findings, plan]
-outputs: [findings, comment-manifest]
+outputs: [findings, comment-manifest, commit-message]
 outcomes:
   done: 対象の指摘をすべて、直したか反論して`findings`に書き直した
   nothing_to_fix: 対象の指摘が1件も無かった（何も変更しない）
@@ -32,6 +32,10 @@ outcomes:
 - 対象をすべて直すか反論したら`done`で終える。`findings`には反論した指摘だけを書く（無ければ空の配列`[]`を書く）。feedbackには、直した指摘と反論した指摘の`id`を分けて列挙する。修正の確認はこれを読んで、どの反論を裁定するかを決める
 - 3.の指摘が残ったら、直せる指摘をすべて直した後に`cannot_fix`で終え、feedbackに残した指摘を`id`付きで、理由を添えて列挙する。feedbackは人間が読む。反論した指摘があれば、`done`と同じく`findings`に書き（`disputed: true`と`response`）、feedbackにも反論した指摘の`id`を挙げる。`cannot_fix`では修正の確認を経ずに人間の判断へ回るので、反論は裁定されないまま人間が読む。反論は`cannot_fix`の理由にしない
 - 対象が1件も無ければ、何も変更せずに`nothing_to_fix`で終える
+
+## commitメッセージ
+
+レビューの後の修正は、このタスクの後にまとめて1つのコミットになる（コミット自体はワークフローが行う）。何かを直したら、そのコミットのメッセージをプレーンテキストで`commit-message`に書くこと。実装の`commit-message`と同じく、このリポジトリのコミットメッセージの規約（CLAUDE.md・CONTRIBUTING.md等、無ければ`git log --oneline -20`の書式）に従い、masuda自身についての文言は含めない。修正の確認から差し戻されて再び直すときは、前回までに直した分も含めて、このコミット全体を表すメッセージに書き直す（コミットに使われるのは最後に書いたものだけ）。`cannot_fix`で終えるときも、直した分があれば書く。何も直さなかったとき（反論だけのとき）は空の文字列を書く。
 
 修正の理由や却下した代替案、指摘の文言をコメントとして書き残さないこと。コードコメントは現在のコードの意図だけを説明するもので、この修正が何にどう応答したかを説明する場所ではない。反論は`response`に書き、コードには書かない。
 
